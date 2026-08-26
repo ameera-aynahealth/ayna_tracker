@@ -17,17 +17,16 @@ import { startOfTodayUTC, OPEN_STATUS_LIST } from "@/lib/date-utils";
 
 export { startOfTodayUTC };
 
-// Centralized domain/query logic. Pages should call these helpers rather than
-// re-implementing overdue, ownership, status, and project-count rules.
 const OPEN_STATUSES = OPEN_STATUS_LIST;
-type TaskStatus = "backlog" | "not_started" | "in_progress" | "waiting" | "blocked" | "needs_review" | "completed" | "cancelled";
+type OpenTaskStatus = (typeof OPEN_STATUS_LIST)[number];
+type ProjectClosedStatus = "completed" | "cancelled";
 
 export function isOpenStatus(status: string) {
   return (OPEN_STATUSES as readonly string[]).includes(status);
 }
 
 function isOpenStatusSql() {
-  return inArray(tasks.status, OPEN_STATUSES as unknown as TaskStatus[]);
+  return inArray(tasks.status, OPEN_STATUSES as unknown as OpenTaskStatus[]);
 }
 
 export async function getWorkspace() {
@@ -51,8 +50,11 @@ export async function getActiveWorkstreams() {
   return db.query.workstreams.findMany({ where: isNull(workstreams.archivedAt), orderBy: [workstreams.name] });
 }
 
-// ---- My Work --------------------------------------------------------------
-
+// ---------------------------------------------------------------------------
+// My Work is the source of truth for personal workload. It includes primary
+// ownership, review responsibility, and collaboration so tasks do not vanish
+// from someone's daily view simply because they are not the primary owner.
+// ---------------------------------------------------------------------------
 export async function getMyWorkBuckets(userId: string) {
   const [member, collaborationRows] = await Promise.all([
     db.query.users.findFirst({ where: eq(users.id, userId) }),
@@ -65,24 +67,24 @@ export async function getMyWorkBuckets(userId: string) {
   const sevenDays = new Date(today.getTime() + 7 * 86400000);
   const collaboratorIds = collaborationRows.map((row) => row.taskId);
 
-  const ownership = collaboratorIds.length
+  const ownership = collaboratorIds.length > 0
     ? or(eq(tasks.ownerId, userId), eq(tasks.reviewerId, userId), inArray(tasks.id, collaboratorIds))
     : or(eq(tasks.ownerId, userId), eq(tasks.reviewerId, userId));
 
   const rows = await db.query.tasks.findMany({
     where: and(ownership, isNull(tasks.archivedAt), isOpenStatusSql()),
     with: { project: true, owner: true },
-    orderBy: [tasks.dueAt, desc(tasks.priority)],
+    orderBy: [tasks.dueAt, desc(tasks.updatedAt)],
   });
 
-  const overdue = rows.filter((t) => t.dueAt && t.dueAt < today && t.status !== "waiting" && t.status !== "blocked");
-  const dueToday = rows.filter((t) => t.dueAt && t.dueAt >= today && t.dueAt < tomorrow);
-  const dueTomorrow = rows.filter((t) => t.dueAt && t.dueAt >= tomorrow && t.dueAt < dayAfterTomorrow);
-  const thisWeek = rows.filter((t) => t.dueAt && t.dueAt >= dayAfterTomorrow && t.dueAt < sevenDays);
-  const waiting = rows.filter((t) => t.status === "waiting");
-  const blocked = rows.filter((t) => t.status === "blocked");
-  const needsReview = rows.filter((t) => t.status === "needs_review" || (t.reviewerId === userId && t.reviewRequired));
-  const noDueDate = rows.filter((t) => !t.dueAt && !["waiting", "blocked", "needs_review"].includes(t.status));
+  const overdue = rows.filter((task) => task.dueAt && task.dueAt < today && task.status !== "waiting" && task.status !== "blocked");
+  const dueToday = rows.filter((task) => task.dueAt && task.dueAt >= today && task.dueAt < tomorrow);
+  const dueTomorrow = rows.filter((task) => task.dueAt && task.dueAt >= tomorrow && task.dueAt < dayAfterTomorrow);
+  const thisWeek = rows.filter((task) => task.dueAt && task.dueAt >= dayAfterTomorrow && task.dueAt < sevenDays);
+  const waiting = rows.filter((task) => task.status === "waiting");
+  const blocked = rows.filter((task) => task.status === "blocked");
+  const needsReview = rows.filter((task) => task.status === "needs_review" || (task.reviewerId === userId && task.reviewRequired));
+  const noDueDate = rows.filter((task) => !task.dueAt && !["waiting", "blocked", "needs_review"].includes(task.status));
 
   return { overdue, dueToday, dueTomorrow, thisWeek, waiting, blocked, needsReview, noDueDate, all: rows };
 }
@@ -109,41 +111,41 @@ export async function getTopPriorities(userId: string, limit = 5) {
     .map(({ task }) => task);
 }
 
-function priorityScore(t: { dueAt: Date | null; priority: string; status: string }) {
+function priorityScore(task: { dueAt: Date | null; priority: string; status: string }) {
   const today = startOfTodayUTC();
   let score = 0;
-  if (t.dueAt && t.dueAt < today) score += 100;
-  if (t.priority === "urgent") score += 55;
-  if (t.dueAt && t.dueAt >= today && t.dueAt < new Date(today.getTime() + 86400000)) score += 40;
-  if (t.priority === "high") score += 22;
-  if (t.status === "blocked") score += 18;
-  if (t.status === "needs_review") score += 16;
-  if (t.status === "waiting") score -= 8;
+  if (task.dueAt && task.dueAt < today) score += 100;
+  if (task.priority === "urgent") score += 55;
+  if (task.dueAt && task.dueAt >= today && task.dueAt < new Date(today.getTime() + 86400000)) score += 40;
+  if (task.priority === "high") score += 22;
+  if (task.status === "blocked") score += 18;
+  if (task.status === "needs_review") score += 16;
+  if (task.status === "waiting") score -= 8;
   return score;
 }
 
 export async function getDashboardVisuals(userId: string) {
   const buckets = await getMyWorkBuckets(userId);
-  const statusCounts = OPEN_STATUS_LIST.reduce<Record<string, number>>((acc, status) => {
-    acc[status] = buckets.all.filter((t) => t.status === status).length;
-    return acc;
+  const statusCounts = OPEN_STATUS_LIST.reduce<Record<string, number>>((result, status) => {
+    result[status] = buckets.all.filter((task) => task.status === status).length;
+    return result;
   }, {});
-
   const today = startOfTodayUTC();
   const nextSevenDays = Array.from({ length: 7 }, (_, index) => {
     const start = new Date(today.getTime() + index * 86400000);
     const end = new Date(start.getTime() + 86400000);
     return {
       date: start,
-      count: buckets.all.filter((t) => t.dueAt && t.dueAt >= start && t.dueAt < end).length,
+      count: buckets.all.filter((task) => task.dueAt && task.dueAt >= start && task.dueAt < end).length,
     };
   });
-
   return { statusCounts, nextSevenDays };
 }
 
-// ---- Projects -------------------------------------------------------------
-
+// ---------------------------------------------------------------------------
+// Projects. Counts are calculated from one task fetch to avoid the old N+1
+// query behavior where every project triggered another round trip.
+// ---------------------------------------------------------------------------
 export async function getProjectsWithProgress() {
   const [allProjects, projectTasks] = await Promise.all([
     db.query.projects.findMany({
@@ -188,8 +190,6 @@ export async function getProjectWithTasks(projectId: string) {
   return { project, tasks: projectTasks, workstreams: allWorkstreams };
 }
 
-// ---- Task detail ----------------------------------------------------------
-
 export async function getTaskDetail(taskId: string) {
   return db.query.tasks.findFirst({
     where: eq(tasks.id, taskId),
@@ -206,27 +206,27 @@ export async function getTaskDetail(taskId: string) {
   });
 }
 
-// ---- All tasks ------------------------------------------------------------
-
-export async function getAllTasks(opts: { limit?: number } = {}) {
+export async function getAllTasks(options: { limit?: number } = {}) {
   return db.query.tasks.findMany({
     where: isNull(tasks.archivedAt),
     with: { owner: true, project: true },
     orderBy: [desc(tasks.updatedAt)],
-    limit: opts.limit ?? 500,
+    limit: options.limit ?? 500,
   });
 }
 
 export async function getArchive() {
+  const closedTaskStatuses = ["completed", "cancelled"] as const;
+  const closedProjectStatuses = ["completed", "cancelled"] as const;
   const [archivedTasks, archivedProjects] = await Promise.all([
     db.query.tasks.findMany({
-      where: inArray(tasks.status, ["completed", "cancelled"]),
+      where: inArray(tasks.status, closedTaskStatuses as unknown as ("completed" | "cancelled")[]),
       with: { owner: true, project: true },
       orderBy: [desc(tasks.completedAt), desc(tasks.updatedAt)],
       limit: 250,
     }),
     db.query.projects.findMany({
-      where: inArray(projects.status, ["completed", "cancelled"]),
+      where: inArray(projects.status, closedProjectStatuses as unknown as ProjectClosedStatus[]),
       with: { owner: true },
       orderBy: [desc(projects.updatedAt)],
     }),
@@ -234,14 +234,11 @@ export async function getArchive() {
   return { tasks: archivedTasks, projects: archivedProjects };
 }
 
-// ---- Team -----------------------------------------------------------------
-
 export async function getTeamWorkload() {
   const [members, openTasks] = await Promise.all([
     getActiveUsers(),
     db.query.tasks.findMany({ where: and(isNull(tasks.archivedAt), isOpenStatusSql()) }),
   ]);
-
   const today = startOfTodayUTC();
   return members.map((member) => {
     const owned = openTasks.filter((task) => task.ownerId === member.id);
@@ -253,8 +250,6 @@ export async function getTeamWorkload() {
   });
 }
 
-// ---- Shell / inbox --------------------------------------------------------
-
 export async function getShellData(userId: string) {
   const [unread, buckets] = await Promise.all([
     db.query.notifications.findMany({
@@ -264,7 +259,6 @@ export async function getShellData(userId: string) {
     }),
     getMyWorkBuckets(userId),
   ]);
-
   return {
     unread,
     unreadCount: unread.length,
@@ -276,13 +270,10 @@ export async function getShellData(userId: string) {
 export async function getInbox(userId: string) {
   return db.query.notifications.findMany({
     where: eq(notifications.userId, userId),
-    with: { task: true },
     orderBy: [desc(notifications.createdAt)],
     limit: 150,
   });
 }
-
-// ---- Calendar -------------------------------------------------------------
 
 export async function getCalendarTasks(days = 42) {
   const all = await getAllTasks({ limit: 1000 });
@@ -291,13 +282,12 @@ export async function getCalendarTasks(days = 42) {
   return all.filter((task) => task.dueAt && task.dueAt >= today && task.dueAt < end && !["completed", "cancelled"].includes(task.status));
 }
 
-// ---- Saved views ----------------------------------------------------------
-
 export async function getSavedViews(userId: string) {
-  return db.query.savedViews.findMany({ where: eq(savedViews.userId, userId), orderBy: [desc(savedViews.pinned), savedViews.name] });
+  return db.query.savedViews.findMany({
+    where: eq(savedViews.userId, userId),
+    orderBy: [desc(savedViews.pinned), savedViews.name],
+  });
 }
-
-// ---- Analytics ------------------------------------------------------------
 
 export async function getAnalyticsSnapshot() {
   const [allTasks, allProjects, members, streams, failedDeliveries] = await Promise.all([
@@ -321,17 +311,14 @@ export async function getAnalyticsSnapshot() {
     label: status.replaceAll("_", " "),
     value: allTasks.filter((task) => task.status === status).length,
   }));
-
   const priorityCounts = ["urgent", "high", "medium", "low"].map((priority) => ({
     label: priority,
     value: open.filter((task) => task.priority === priority).length,
   }));
-
   const ownerCounts = members.map((member) => ({
     label: member.name.split(" ")[0] || member.name,
     value: open.filter((task) => task.ownerId === member.id).length,
   }));
-
   const workstreamCounts = streams.map((stream) => ({
     label: stream.name,
     value: open.filter((task) => task.workstreamId === stream.id).length,
@@ -373,5 +360,34 @@ export async function getAnalyticsSnapshot() {
     completionTrend,
     createdVsCompleted,
     projects: allProjects,
+  };
+}
+
+// A non-destructive data-health summary for admins. This intentionally flags
+// likely problems instead of silently deleting or merging existing Ayna data.
+export async function getDataHealthSnapshot() {
+  const all = await db.query.tasks.findMany({ where: isNull(tasks.archivedAt) });
+  const activeUserIds = new Set((await getActiveUsers()).map((user) => user.id));
+  const normalizedTitles = new Map<string, string[]>();
+  for (const task of all) {
+    const normalized = task.title.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+    const ids = normalizedTitles.get(normalized) ?? [];
+    ids.push(task.id);
+    normalizedTitles.set(normalized, ids);
+  }
+  const duplicateGroups = [...normalizedTitles.values()].filter((ids) => ids.length > 1);
+  const malformedTitles = all.filter((task) => {
+    const words = task.title.toLowerCase().trim().split(/\s+/);
+    if (words.length < 4) return false;
+    const half = Math.floor(words.length / 2);
+    return words.slice(0, half).join(" ") === words.slice(half, half * 2).join(" ");
+  });
+  return {
+    possibleDuplicateGroups: duplicateGroups.length,
+    possibleDuplicateTasks: duplicateGroups.reduce((sum, group) => sum + group.length, 0),
+    missingOwner: all.filter((task) => !task.ownerId).length,
+    missingDueDate: all.filter((task) => isOpenStatus(task.status) && !task.dueAt).length,
+    inactiveOwner: all.filter((task) => task.ownerId && !activeUserIds.has(task.ownerId)).length,
+    malformedTitles: malformedTitles.length,
   };
 }
