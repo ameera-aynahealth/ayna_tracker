@@ -38,15 +38,19 @@ type NavItem = {
   count?: number;
 };
 
+type PersonOption = { id: string; name: string };
+
 export function ShellClient({
   active,
   children,
   currentUser,
+  people,
   shellData,
 }: {
   active: string;
   children: React.ReactNode;
   currentUser: { id: string; name: string; role: string };
+  people: PersonOption[];
   shellData: { unread: ShellNotification[]; unreadCount: number; myWorkCount: number; overdueCount: number };
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -128,7 +132,7 @@ export function ShellClient({
           <button onClick={() => setMobileOpen(true)} className="md:hidden p-2 rounded-xl hover:bg-surface" aria-label="Open menu"><Menu size={19} /></button>
           <div className="flex-1 flex justify-center sm:justify-start"><GlobalSearch /></div>
           <NotificationBell items={shellData.unread} count={shellData.unreadCount} />
-          <QuickAddTask />
+          <QuickAddTask currentUserId={currentUser.id} people={people} />
         </header>
 
         <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
