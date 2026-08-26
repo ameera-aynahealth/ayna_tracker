@@ -8,10 +8,10 @@ export default function NotAuthorizedPage() {
         <div className="font-voice text-2xl font-semibold text-accent-text mb-6">ayna</div>
         <h1 className="font-voice text-3xl font-semibold mb-3">Ayna team access only</h1>
         <p className="text-sm text-text-secondary leading-6 mb-6">
-          This tracker is only available to people signed in with an @aynahealth.co email address who are active members of the Ayna workspace.
+          This tracker is only available when you sign in with an @aynahealth.co email address.
         </p>
         <p className="text-sm text-text-secondary leading-6 mb-6">
-          Personal Gmail, Outlook, and other non-Ayna email accounts cannot access the tracker.
+          Personal Gmail, Outlook, and any other non-Ayna email accounts cannot access the tracker.
         </p>
         <div className="flex items-center gap-3">
           <UserButton afterSignOutUrl="/sign-in" />
