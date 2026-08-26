@@ -7,8 +7,9 @@ import { redirect } from "next/navigation";
 
 /**
  * Ayna Tracker is private to the Ayna team.
- * Access is granted only when the signed-in account email ends in
- * @aynahealth.co. No Clerk organization membership or invitation is required.
+ * Access is granted only when the signed-in Clerk account currently contains
+ * an @aynahealth.co email address. No Clerk organization membership or
+ * invitation is required.
  */
 export const AYNA_EMAIL_DOMAIN = "@aynahealth.co";
 
@@ -21,11 +22,15 @@ export async function getAynaClerkUser() {
   if (!userId) redirect("/sign-in");
 
   const clerkUser = await currentUser();
-  const email = clerkUser?.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress
-    ?? clerkUser?.emailAddresses[0]?.emailAddress
-    ?? "";
 
-  if (!isAynaEmail(email)) redirect("/not-authorized");
+  // Do not rely on Clerk's primary email alone. A teammate can sign in with
+  // Google Workspace while Clerk still keeps a personal address as primary.
+  // Accept the account when ANY currently attached Clerk/Google email is Ayna.
+  const directAynaEmail = clerkUser?.emailAddresses.find((entry) => isAynaEmail(entry.emailAddress))?.emailAddress;
+  const externalAynaEmail = clerkUser?.externalAccounts.find((account) => isAynaEmail(account.emailAddress ?? ""))?.emailAddress;
+  const email = directAynaEmail ?? externalAynaEmail ?? "";
+
+  if (!isAynaEmail(email)) redirect("/not-authorized?reason=email");
 
   return { userId, clerkUser, email: email.trim().toLowerCase() };
 }
@@ -55,7 +60,7 @@ export async function getOrCreateCurrentUser() {
   });
 
   if (existingByProvider) {
-    if (!existingByProvider.active) redirect("/not-authorized");
+    if (!existingByProvider.active) redirect("/not-authorized?reason=inactive");
 
     await db.update(users).set({
       email,
@@ -69,7 +74,7 @@ export async function getOrCreateCurrentUser() {
 
   const existingByEmail = await db.query.users.findFirst({ where: eq(users.email, email) });
   if (existingByEmail) {
-    if (!existingByEmail.active) redirect("/not-authorized");
+    if (!existingByEmail.active) redirect("/not-authorized?reason=inactive");
 
     await db.update(users).set({
       authProviderId,
@@ -107,13 +112,13 @@ export async function getOrCreateCurrentUser() {
     where: eq(users.authProviderId, authProviderId),
   });
   if (resolvedByProvider) {
-    if (!resolvedByProvider.active) redirect("/not-authorized");
+    if (!resolvedByProvider.active) redirect("/not-authorized?reason=inactive");
     return resolvedByProvider;
   }
 
   const resolvedByEmail = await db.query.users.findFirst({ where: eq(users.email, email) });
   if (resolvedByEmail) {
-    if (!resolvedByEmail.active) redirect("/not-authorized");
+    if (!resolvedByEmail.active) redirect("/not-authorized?reason=inactive");
 
     // Covers a rare concurrent email-linking race without creating a duplicate.
     if (resolvedByEmail.authProviderId !== authProviderId) {
