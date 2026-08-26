@@ -8,14 +8,14 @@ export default function Page() {
           <div className="font-voice text-3xl font-semibold text-accent-text mb-2">ayna</div>
           <h1 className="font-voice text-2xl font-semibold text-text-primary">Ayna team sign in</h1>
           <p className="text-sm text-text-secondary mt-2 leading-6">
-            This tracker is private. Sign in with the Google account that was invited to the Ayna workspace.
+            Sign in with your @aynahealth.co account. Other email domains cannot access this tracker.
           </p>
         </div>
         <div className="flex justify-center">
           <SignIn />
         </div>
         <p className="text-xs text-text-muted text-center mt-5 leading-5">
-          Public sign-up is disabled. If you need access, ask an Ayna admin to invite you.
+          Access is limited to active Ayna team members using an @aynahealth.co email address.
         </p>
       </div>
     </main>
