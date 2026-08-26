@@ -6,16 +6,31 @@ import { nanoid } from "nanoid";
 import { redirect } from "next/navigation";
 
 /**
- * Ayna Tracker is invite-only and single-organization.
- * A Google/Clerk account by itself is never enough to enter the tracker:
- * the signed-in Clerk user must be an active member of this exact Ayna org.
+ * Ayna Tracker is private to the Ayna team.
+ * A user must sign in with an @aynahealth.co email address and also be an
+ * active member of the exact Ayna Clerk organization.
  */
 export const AYNA_CLERK_ORG_ID =
   process.env.CLERK_ORGANIZATION_ID ?? "org_3IRENjCjH7Ag660gEUrxgk1xZ4O";
 
+export const AYNA_EMAIL_DOMAIN = "@aynahealth.co";
+
+export function isAynaEmail(email: string) {
+  return email.trim().toLowerCase().endsWith(AYNA_EMAIL_DOMAIN);
+}
+
 export async function getAynaClerkMembership() {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
+
+  const clerkUser = await currentUser();
+  const email = clerkUser?.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress
+    ?? clerkUser?.emailAddresses[0]?.emailAddress
+    ?? "";
+
+  // Domain gate: a Gmail, Outlook, personal, or any other non-Ayna account is
+  // denied even if it somehow has a valid Clerk session or organization invite.
+  if (!isAynaEmail(email)) redirect("/not-authorized");
 
   const client = await clerkClient();
   const memberships = await client.organizations.getOrganizationMembershipList({
@@ -27,23 +42,23 @@ export async function getAynaClerkMembership() {
   const membership = memberships.data[0];
   if (!membership) redirect("/not-authorized");
 
-  return { userId, membership };
+  return { userId, membership, clerkUser, email };
 }
 
 /**
  * Resolves the signed-in Clerk user to the internal Ayna users row.
- * Organization membership is checked every time this helper is used, so an
- * outsider who creates/signs into a Clerk account still cannot read tracker
- * data. Removing someone from the Clerk org immediately removes tracker
- * access on their next request.
+ * Both the @aynahealth.co email check and Ayna organization membership check
+ * run every time this helper is used. Internal deactivation is an additional
+ * lock, so removing or deactivating someone removes tracker access.
  */
 export async function getOrCreateCurrentUser() {
-  const { userId: authProviderId, membership } = await getAynaClerkMembership();
+  const {
+    userId: authProviderId,
+    membership,
+    clerkUser,
+    email,
+  } = await getAynaClerkMembership();
 
-  const clerkUser = await currentUser();
-  const email = clerkUser?.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress
-    ?? clerkUser?.emailAddresses[0]?.emailAddress
-    ?? "";
   const name = clerkUser
     ? `${clerkUser.firstName ?? ""} ${clerkUser.lastName ?? ""}`.trim() || email
     : email;
@@ -62,7 +77,7 @@ export async function getOrCreateCurrentUser() {
       : existingByProvider.role;
 
     await db.update(users).set({
-      email: email || existingByProvider.email,
+      email,
       name: name || existingByProvider.name,
       image: clerkUser?.imageUrl ?? existingByProvider.image,
       role,
@@ -74,23 +89,21 @@ export async function getOrCreateCurrentUser() {
 
   // Invited/pre-created teammates can claim their existing row on first
   // Clerk sign-in instead of creating a duplicate user by email.
-  if (email) {
-    const existingByEmail = await db.query.users.findFirst({ where: eq(users.email, email) });
-    if (existingByEmail) {
-      if (!existingByEmail.active) redirect("/not-authorized");
+  const existingByEmail = await db.query.users.findFirst({ where: eq(users.email, email) });
+  if (existingByEmail) {
+    if (!existingByEmail.active) redirect("/not-authorized");
 
-      const role = membership.role === "org:admin" && existingByEmail.role !== "viewer"
-        ? "admin" as const
-        : existingByEmail.role;
-      await db.update(users).set({
-        authProviderId,
-        name: name || existingByEmail.name,
-        image: clerkUser?.imageUrl ?? existingByEmail.image,
-        role,
-        updatedAt: new Date(),
-      }).where(eq(users.id, existingByEmail.id));
-      return db.query.users.findFirst({ where: eq(users.id, existingByEmail.id) });
-    }
+    const role = membership.role === "org:admin" && existingByEmail.role !== "viewer"
+      ? "admin" as const
+      : existingByEmail.role;
+    await db.update(users).set({
+      authProviderId,
+      name: name || existingByEmail.name,
+      image: clerkUser?.imageUrl ?? existingByEmail.image,
+      role,
+      updatedAt: new Date(),
+    }).where(eq(users.id, existingByEmail.id));
+    return db.query.users.findFirst({ where: eq(users.id, existingByEmail.id) });
   }
 
   let workspace = (await db.query.workspaces.findMany({ limit: 1 }))[0];
@@ -108,7 +121,6 @@ export async function getOrCreateCurrentUser() {
     };
   }
 
-  // Reaching this point already proves Clerk membership in the Ayna org.
   const id = nanoid();
   await db.insert(users).values({
     id,
