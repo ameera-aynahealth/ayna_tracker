@@ -38,6 +38,13 @@ export async function updateInternalMemberRole(userId: string, role: "admin" | "
 export async function setMemberActive(userId: string, active: boolean) {
   const admin = await requireAdmin();
   if (admin.id === userId && !active) throw new Error("You cannot deactivate yourself");
+
+  const target = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  if (!target) throw new Error("Team member not found");
+  if (!active && target.email.trim().toLowerCase() === "puloma@aynahealth.co") {
+    throw new Error("Puloma's Ayna account is protected from deactivation");
+  }
+
   await db.update(users).set({ active, updatedAt: new Date() }).where(eq(users.id, userId));
   revalidatePath("/settings");
   revalidatePath("/team");
