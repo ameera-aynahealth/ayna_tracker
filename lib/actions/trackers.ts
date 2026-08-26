@@ -8,6 +8,7 @@ import { db } from "@/db";
 import { trackerItems, trackers } from "@/db/tracker-schema";
 import { requireEditPermission } from "@/lib/auth";
 import { createTaskQuick } from "@/lib/actions/tasks";
+import { ensureTrackerSchema } from "@/lib/ensure-trackers";
 
 const templates = {
   partnerships: {
@@ -38,6 +39,7 @@ function stageJson(template: keyof typeof templates) {
 
 export async function createTracker(input: { name: string; description?: string; template?: keyof typeof templates }) {
   const user = await requireEditPermission();
+  await ensureTrackerSchema();
   const name = z.string().trim().min(1).max(120).parse(input.name);
   const template = templateSchema.parse(input.template ?? "general");
   const id = nanoid();
@@ -57,6 +59,7 @@ export async function createTracker(input: { name: string; description?: string;
 
 export async function archiveTracker(trackerId: string) {
   await requireEditPermission();
+  await ensureTrackerSchema();
   await db.update(trackers).set({ archivedAt: new Date(), updatedAt: new Date() }).where(eq(trackers.id, trackerId));
   revalidatePath("/trackers");
   revalidatePath("/archive");
@@ -64,6 +67,7 @@ export async function archiveTracker(trackerId: string) {
 
 export async function restoreTracker(trackerId: string) {
   await requireEditPermission();
+  await ensureTrackerSchema();
   await db.update(trackers).set({ archivedAt: null, updatedAt: new Date() }).where(eq(trackers.id, trackerId));
   revalidatePath("/trackers");
   revalidatePath("/archive");
@@ -78,6 +82,7 @@ export async function createTrackerItem(input: {
   contactEmail?: string;
 }) {
   const user = await requireEditPermission();
+  await ensureTrackerSchema();
   const title = z.string().trim().min(1).max(300).parse(input.title);
   const tracker = await db.query.trackers.findFirst({ where: eq(trackers.id, input.trackerId) });
   if (!tracker) throw new Error("Tracker not found");
@@ -115,6 +120,7 @@ export async function updateTrackerItem(input: {
   notes?: string | null;
 }) {
   await requireEditPermission();
+  await ensureTrackerSchema();
   if (input.actionState) actionStateSchema.parse(input.actionState);
 
   const patch: Partial<typeof trackerItems.$inferInsert> = { updatedAt: new Date() };
@@ -135,6 +141,7 @@ export async function updateTrackerItem(input: {
 
 export async function archiveTrackerItem(itemId: string, trackerId: string) {
   await requireEditPermission();
+  await ensureTrackerSchema();
   await db.update(trackerItems).set({ archivedAt: new Date(), updatedAt: new Date() }).where(eq(trackerItems.id, itemId));
   revalidatePath("/trackers");
   revalidatePath(`/trackers/${trackerId}`);
@@ -142,6 +149,7 @@ export async function archiveTrackerItem(itemId: string, trackerId: string) {
 
 export async function createTrackerFollowupTask(input: { itemId: string; trackerId: string }) {
   const user = await requireEditPermission();
+  await ensureTrackerSchema();
   const item = await db.query.trackerItems.findFirst({ where: eq(trackerItems.id, input.itemId) });
   if (!item) throw new Error("Tracker item not found");
 
