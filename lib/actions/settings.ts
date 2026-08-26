@@ -3,7 +3,7 @@
 import { clerkClient } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { AYNA_CLERK_ORG_ID, getOrCreateCurrentUser, requireAdmin } from "@/lib/auth";
+import { AYNA_CLERK_ORG_ID, getOrCreateCurrentUser, isAynaEmail, requireAdmin } from "@/lib/auth";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -30,14 +30,19 @@ export async function updateNotificationPreferences(input: z.infer<typeof prefer
 
 export async function inviteAynaMember(emailAddress: string, role: "org:member" | "org:admin" = "org:member") {
   const admin = await requireAdmin();
-  const email = z.string().email().parse(emailAddress.trim());
+  const email = z.string().email().parse(emailAddress.trim()).toLowerCase();
+
+  if (!isAynaEmail(email)) {
+    throw new Error("Only @aynahealth.co email addresses can be invited to the Ayna tracker");
+  }
+
   const client = await clerkClient();
   const invitation = await client.organizations.createOrganizationInvitation({
     organizationId: AYNA_CLERK_ORG_ID,
     inviterUserId: admin.authProviderId,
     emailAddress: email,
     role,
-    redirectUrl: `${(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}/`,
+    redirectUrl: `${(process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "")}/`,
   });
   return { id: invitation.id, email: invitation.emailAddress };
 }
