@@ -1,9 +1,8 @@
 "use client";
 
-import { FormEvent, useState, useTransition } from "react";
-import { Check, LockKeyhole, Mail, UserPlus } from "lucide-react";
+import { useState, useTransition } from "react";
+import { Check, LockKeyhole } from "lucide-react";
 import {
-  inviteAynaMember,
   setMemberActive,
   updateInternalMemberRole,
   updateNotificationPreferences,
@@ -29,12 +28,10 @@ export type SettingsUser = {
 export function SettingsPanel({
   currentUser,
   people,
-  organizationId,
   dataHealth,
 }: {
   currentUser: SettingsUser;
   people: SettingsUser[];
-  organizationId: string;
   dataHealth: {
     possibleDuplicateGroups: number;
     possibleDuplicateTasks: number;
@@ -57,9 +54,6 @@ export function SettingsPanel({
     weeklyDigest: currentUser.weeklyDigest,
   });
   const [saved, setSaved] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<"org:member" | "org:admin">("org:member");
-  const [inviteMessage, setInviteMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function savePreferences() {
@@ -71,21 +65,6 @@ export function SettingsPanel({
         window.setTimeout(() => setSaved(false), 1800);
       } catch {
         setSaved(false);
-      }
-    });
-  }
-
-  function submitInvite(event: FormEvent) {
-    event.preventDefault();
-    if (!inviteEmail.trim()) return;
-    setInviteMessage(null);
-    startTransition(async () => {
-      try {
-        const result = await inviteAynaMember(inviteEmail.trim(), inviteRole);
-        setInviteEmail("");
-        setInviteMessage(`Invitation sent to ${result.email}`);
-      } catch (error) {
-        setInviteMessage(error instanceof Error ? error.message : "Could not send invitation");
       }
     });
   }
@@ -140,33 +119,17 @@ export function SettingsPanel({
         {tab === "team" && (
           <div className="space-y-4">
             <section className="border border-border bg-surface p-5 sm:p-7" style={{ borderRadius: "24px 12px 12px 12px" }}>
-              <div className="flex items-start gap-3 mb-5">
+              <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-accent-soft text-accent-text flex items-center justify-center shrink-0"><LockKeyhole size={18} /></div>
                 <div>
-                  <h2 className="font-voice text-2xl font-semibold">Ayna organization access</h2>
-                  <p className="text-sm text-text-secondary mt-1">Signing in with Google is not enough. The account must also be a member of the Ayna Clerk organization before the tracker will load.</p>
+                  <h2 className="font-voice text-2xl font-semibold">Ayna team access only</h2>
+                  <p className="text-sm text-text-secondary mt-1 leading-6">Only accounts signed in with an <span className="font-semibold text-text-primary">@aynahealth.co</span> email address can access the tracker. No invitation or Clerk organization membership is required.</p>
                 </div>
-              </div>
-              <div className="rounded-2xl bg-page border border-border p-4">
-                <div className="text-[10px] uppercase tracking-[0.1em] font-semibold text-text-muted">Clerk organization ID</div>
-                <code className="text-xs sm:text-sm text-text-secondary break-all">{organizationId}</code>
               </div>
             </section>
 
-            {currentUser.role === "admin" && (
-              <section className="border border-border bg-surface p-5 sm:p-7" style={{ borderRadius: "24px 12px 12px 12px" }}>
-                <div className="flex items-center gap-2 mb-4"><UserPlus size={17} className="text-accent-text" /><h3 className="font-voice text-xl font-semibold">Invite teammate</h3></div>
-                <form onSubmit={submitInvite} className="flex flex-col sm:flex-row gap-2">
-                  <label className="flex items-center gap-2 border border-border rounded-xl px-3 py-2.5 flex-1"><Mail size={15} className="text-text-muted" /><input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="teammate@gmail.com" className="outline-none bg-transparent text-sm flex-1 min-w-0" /></label>
-                  <select value={inviteRole} onChange={(event) => setInviteRole(event.target.value as typeof inviteRole)} className="border border-border bg-surface rounded-xl px-3 py-2.5 text-sm"><option value="org:member">Member</option><option value="org:admin">Admin</option></select>
-                  <button disabled={isPending} className="bg-accent text-white rounded-xl px-4 py-2.5 text-sm font-semibold">Send invite</button>
-                </form>
-                {inviteMessage && <p className="text-xs text-text-secondary mt-3">{inviteMessage}</p>}
-              </section>
-            )}
-
             <section className="border border-border bg-surface overflow-hidden" style={{ borderRadius: "24px 12px 12px 12px" }}>
-              <div className="p-5 border-b border-border"><h3 className="font-voice text-xl font-semibold">Tracker roles</h3><p className="text-sm text-text-secondary mt-1">Clerk controls who may enter. These roles control what they may do inside the tracker.</p></div>
+              <div className="p-5 border-b border-border"><h3 className="font-voice text-xl font-semibold">Tracker roles</h3><p className="text-sm text-text-secondary mt-1">The Ayna email domain controls who can enter. These roles control what each teammate may do inside the tracker.</p></div>
               <div className="divide-y divide-border">
                 {people.map((person) => (
                   <div key={person.id} className="p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center gap-3">
