@@ -1,9 +1,7 @@
-import { SignUp } from "@clerk/nextjs";
+import { redirect } from "next/navigation";
 
 export default function Page() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-page">
-      <SignUp />
-    </div>
-  );
+  // Ayna Tracker does not allow public self-sign-up. New teammates must be
+  // invited to the Ayna Clerk organization by an admin first.
+  redirect("/sign-in");
 }
