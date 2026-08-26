@@ -1,4 +1,4 @@
-import { AYNA_CLERK_ORG_ID, getOrCreateCurrentUser } from "@/lib/auth";
+import { getOrCreateCurrentUser } from "@/lib/auth";
 import { getActiveUsers, getDataHealthSnapshot } from "@/lib/queries";
 import { AppShell } from "@/components/app-shell";
 import { SettingsPanel } from "@/components/settings-panel";
@@ -35,7 +35,6 @@ export default async function SettingsPage() {
       <SettingsPanel
         currentUser={projectUser(user)}
         people={people.map((person) => projectUser(person as typeof user))}
-        organizationId={AYNA_CLERK_ORG_ID}
         dataHealth={dataHealth}
       />
     </AppShell>
