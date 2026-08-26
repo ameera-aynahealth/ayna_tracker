@@ -3,17 +3,12 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
 import * as extraRelations from "./relations";
+import * as trackerSchema from "./tracker-schema";
 
-// Drizzle needs both sides of every relation in the schema object used to
-// initialize the relational query builder. Keep the table schema and the
-// supplemental reverse relations together here so `db.query.*` can infer
-// joins such as projects -> milestones and tasks -> attachments/activity.
-const relationalSchema = { ...schema, ...extraRelations };
+// Drizzle needs all tables and relation definitions in the schema object used
+// by the relational query builder.
+const relationalSchema = { ...schema, ...extraRelations, ...trackerSchema };
 
-// Do not require DATABASE_URL just to import this module. Next.js imports API
-// route modules while collecting build metadata, and those imports should not
-// need a live database connection. The first real database operation still
-// fails clearly if DATABASE_URL is missing.
 type Database = ReturnType<typeof drizzle<typeof relationalSchema>>;
 
 type DbGlobals = {
@@ -36,9 +31,6 @@ function getDatabase(): Database {
   const queryClient = globalForDb.queryClient ?? postgres(databaseUrl, { max: 5 });
   const database = drizzle(queryClient, { schema: relationalSchema });
 
-  // Reuse the connection/database across hot reloads in development. Vercel
-  // serverless functions get a fresh instance per cold start; Neon handles the
-  // pooled connection string on its side.
   if (process.env.NODE_ENV !== "production") {
     globalForDb.queryClient = queryClient;
     globalForDb.database = database;
@@ -47,8 +39,6 @@ function getDatabase(): Database {
   return database;
 }
 
-// Preserve the existing `db.query`, `db.insert`, `db.update`, etc. API while
-// delaying connection creation until code actually performs a database call.
 export const db = new Proxy({} as Database, {
   get(_target, property) {
     const database = getDatabase();
