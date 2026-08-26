@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { trackerItems, trackers } from "@/db/tracker-schema";
 
@@ -37,6 +37,13 @@ export async function getTrackersWithCounts() {
       itemCount: items.length,
       needsAction,
     };
+  });
+}
+
+export async function getArchivedTrackers() {
+  return db.query.trackers.findMany({
+    where: isNotNull(trackers.archivedAt),
+    orderBy: [asc(trackers.name)],
   });
 }
 
