@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FolderKanban,
+  GanttChartSquare,
   Home,
   Inbox,
   LayoutDashboard,
@@ -75,6 +76,7 @@ export function ShellClient({
     { label: "Projects", href: "/projects", icon: FolderKanban },
     { label: "Board", href: "/board", icon: LayoutDashboard },
     { label: "Calendar", href: "/calendar", icon: CalendarDays },
+    { label: "Timeline", href: "/timeline", icon: GanttChartSquare },
   ];
   const insight: NavItem[] = [
     { label: "Team", href: "/team", icon: Users },
