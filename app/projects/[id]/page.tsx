@@ -5,6 +5,7 @@ import { getActiveUsers, getProjectWithTasks } from "@/lib/queries";
 import { AppShell } from "@/components/app-shell";
 import { ProjectTaskWorkspace } from "@/components/project-task-workspace";
 import { QuickAddTask } from "@/components/quick-add-task";
+import { ProjectDeleteButton } from "@/components/project-delete-button";
 import { Card, MetricCard, ProgressRing, StackedDistribution, humanize } from "@/components/visuals";
 
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -38,6 +39,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   return (
     <AppShell active="Projects" currentUser={user}>
+      {project.archivedAt && (
+        <div className="mb-5 rounded-2xl border border-gold/20 bg-gold-soft p-4 text-sm text-gold-text flex flex-wrap items-center justify-between gap-3">
+          <span>This project is in Archive and is hidden from everyday project views.</span>
+          <ProjectDeleteButton projectId={project.id} archived />
+        </div>
+      )}
+
       <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-5 mb-7">
         <div className="max-w-3xl">
           <p className="text-xs uppercase tracking-[0.12em] text-text-muted font-semibold mb-2">Projects / {project.workstream?.name ?? "General"}</p>
@@ -49,7 +57,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
             {project.dueDate && <span className="flex items-center gap-1.5"><CalendarDays size={13} />Due {project.dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>}
           </div>
         </div>
-        <QuickAddTask projectId={project.id} workstreamId={project.workstreamId ?? undefined} label="Add project task" />
+        <div className="flex flex-wrap items-center gap-2">
+          {!project.archivedAt && <QuickAddTask projectId={project.id} workstreamId={project.workstreamId ?? undefined} label="Add project task" />}
+          <ProjectDeleteButton projectId={project.id} archived={Boolean(project.archivedAt)} />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
