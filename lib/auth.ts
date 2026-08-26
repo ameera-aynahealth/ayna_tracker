@@ -6,10 +6,9 @@ import { nanoid } from "nanoid";
 import { redirect } from "next/navigation";
 
 /**
- * The tracker is intentionally single-organization. Anyone can authenticate
- * with Clerk, but only members of the Ayna Clerk organization may enter.
- * The env var lets us move the org later without a code change; the fallback
- * is the current Ayna organization created for this tracker.
+ * Ayna Tracker is invite-only and single-organization.
+ * A Google/Clerk account by itself is never enough to enter the tracker:
+ * the signed-in Clerk user must be an active member of this exact Ayna org.
  */
 export const AYNA_CLERK_ORG_ID =
   process.env.CLERK_ORGANIZATION_ID ?? "org_3IRENjCjH7Ag660gEUrxgk1xZ4O";
@@ -32,9 +31,11 @@ export async function getAynaClerkMembership() {
 }
 
 /**
- * Resolves the signed-in Clerk user to our internal users row. Membership in
- * the Ayna Clerk organization is checked on every server entry point that
- * calls this helper, so a signed-in outsider cannot read tracker data.
+ * Resolves the signed-in Clerk user to the internal Ayna users row.
+ * Organization membership is checked every time this helper is used, so an
+ * outsider who creates/signs into a Clerk account still cannot read tracker
+ * data. Removing someone from the Clerk org immediately removes tracker
+ * access on their next request.
  */
 export async function getOrCreateCurrentUser() {
   const { userId: authProviderId, membership } = await getAynaClerkMembership();
@@ -52,6 +53,10 @@ export async function getOrCreateCurrentUser() {
   });
 
   if (existingByProvider) {
+    // Internal deactivation is an additional lock. Do not silently reactivate
+    // someone merely because their Clerk session is still valid.
+    if (!existingByProvider.active) redirect("/not-authorized");
+
     const role = membership.role === "org:admin" && existingByProvider.role !== "viewer"
       ? "admin" as const
       : existingByProvider.role;
@@ -61,18 +66,19 @@ export async function getOrCreateCurrentUser() {
       name: name || existingByProvider.name,
       image: clerkUser?.imageUrl ?? existingByProvider.image,
       role,
-      active: true,
       updatedAt: new Date(),
     }).where(eq(users.id, existingByProvider.id));
 
     return db.query.users.findFirst({ where: eq(users.id, existingByProvider.id) });
   }
 
-  // This also lets seeded/pre-created teammates claim their row on first
-  // Clerk sign-in instead of colliding with the unique email index.
+  // Invited/pre-created teammates can claim their existing row on first
+  // Clerk sign-in instead of creating a duplicate user by email.
   if (email) {
     const existingByEmail = await db.query.users.findFirst({ where: eq(users.email, email) });
     if (existingByEmail) {
+      if (!existingByEmail.active) redirect("/not-authorized");
+
       const role = membership.role === "org:admin" && existingByEmail.role !== "viewer"
         ? "admin" as const
         : existingByEmail.role;
@@ -81,7 +87,6 @@ export async function getOrCreateCurrentUser() {
         name: name || existingByEmail.name,
         image: clerkUser?.imageUrl ?? existingByEmail.image,
         role,
-        active: true,
         updatedAt: new Date(),
       }).where(eq(users.id, existingByEmail.id));
       return db.query.users.findFirst({ where: eq(users.id, existingByEmail.id) });
@@ -103,6 +108,7 @@ export async function getOrCreateCurrentUser() {
     };
   }
 
+  // Reaching this point already proves Clerk membership in the Ayna org.
   const id = nanoid();
   await db.insert(users).values({
     id,
