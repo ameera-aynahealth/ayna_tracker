@@ -1,4 +1,4 @@
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { users, workspaces } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -6,33 +6,102 @@ import { nanoid } from "nanoid";
 import { redirect } from "next/navigation";
 
 /**
- * Resolves the signed-in Clerk user to our internal `users` row, creating it
- * (and the single workspace, if missing) on first sign-in. This is the ONLY
- * place role/permissions should be read from — never trust a role passed
- * from the client.
+ * The tracker is intentionally single-organization. Anyone can authenticate
+ * with Clerk, but only members of the Ayna Clerk organization may enter.
+ * The env var lets us move the org later without a code change; the fallback
+ * is the current Ayna organization created for this tracker.
+ */
+export const AYNA_CLERK_ORG_ID =
+  process.env.CLERK_ORGANIZATION_ID ?? "org_3IRENjCjH7Ag660gEUrxgk1xZ4O";
+
+export async function getAynaClerkMembership() {
+  const { userId } = await auth();
+  if (!userId) redirect("/sign-in");
+
+  const client = await clerkClient();
+  const memberships = await client.organizations.getOrganizationMembershipList({
+    organizationId: AYNA_CLERK_ORG_ID,
+    userId: [userId],
+    limit: 1,
+  });
+
+  const membership = memberships.data[0];
+  if (!membership) redirect("/not-authorized");
+
+  return { userId, membership };
+}
+
+/**
+ * Resolves the signed-in Clerk user to our internal users row. Membership in
+ * the Ayna Clerk organization is checked on every server entry point that
+ * calls this helper, so a signed-in outsider cannot read tracker data.
  */
 export async function getOrCreateCurrentUser() {
-  const { userId: authProviderId } = await auth();
-  if (!authProviderId) redirect("/sign-in");
+  const { userId: authProviderId, membership } = await getAynaClerkMembership();
 
-  const existing = await db.query.users.findFirst({
+  const clerkUser = await currentUser();
+  const email = clerkUser?.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress
+    ?? clerkUser?.emailAddresses[0]?.emailAddress
+    ?? "";
+  const name = clerkUser
+    ? `${clerkUser.firstName ?? ""} ${clerkUser.lastName ?? ""}`.trim() || email
+    : email;
+
+  const existingByProvider = await db.query.users.findFirst({
     where: eq(users.authProviderId, authProviderId),
   });
-  if (existing) return existing;
 
-  // First sign-in: ensure a workspace exists, then create the user record.
-  // The very first person to sign in becomes admin.
+  if (existingByProvider) {
+    const role = membership.role === "org:admin" && existingByProvider.role !== "viewer"
+      ? "admin" as const
+      : existingByProvider.role;
+
+    await db.update(users).set({
+      email: email || existingByProvider.email,
+      name: name || existingByProvider.name,
+      image: clerkUser?.imageUrl ?? existingByProvider.image,
+      role,
+      active: true,
+      updatedAt: new Date(),
+    }).where(eq(users.id, existingByProvider.id));
+
+    return db.query.users.findFirst({ where: eq(users.id, existingByProvider.id) });
+  }
+
+  // This also lets seeded/pre-created teammates claim their row on first
+  // Clerk sign-in instead of colliding with the unique email index.
+  if (email) {
+    const existingByEmail = await db.query.users.findFirst({ where: eq(users.email, email) });
+    if (existingByEmail) {
+      const role = membership.role === "org:admin" && existingByEmail.role !== "viewer"
+        ? "admin" as const
+        : existingByEmail.role;
+      await db.update(users).set({
+        authProviderId,
+        name: name || existingByEmail.name,
+        image: clerkUser?.imageUrl ?? existingByEmail.image,
+        role,
+        active: true,
+        updatedAt: new Date(),
+      }).where(eq(users.id, existingByEmail.id));
+      return db.query.users.findFirst({ where: eq(users.id, existingByEmail.id) });
+    }
+  }
+
   let workspace = (await db.query.workspaces.findMany({ limit: 1 }))[0];
   const isFirstUser = !workspace;
   if (!workspace) {
     const id = nanoid();
     await db.insert(workspaces).values({ id, name: "Ayna" });
-    workspace = { id, name: "Ayna", timezone: "America/New_York", defaultDueTime: "17:00", createdAt: new Date(), updatedAt: new Date() };
+    workspace = {
+      id,
+      name: "Ayna",
+      timezone: "America/New_York",
+      defaultDueTime: "17:00",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
   }
-
-  const clerkUser = await currentUser();
-  const email = clerkUser?.emailAddresses[0]?.emailAddress ?? "";
-  const name = clerkUser ? `${clerkUser.firstName ?? ""} ${clerkUser.lastName ?? ""}`.trim() || email : email;
 
   const id = nanoid();
   await db.insert(users).values({
@@ -42,7 +111,7 @@ export async function getOrCreateCurrentUser() {
     email,
     name,
     image: clerkUser?.imageUrl,
-    role: isFirstUser ? "admin" : "member",
+    role: membership.role === "org:admin" || isFirstUser ? "admin" : "member",
   });
 
   return db.query.users.findFirst({ where: eq(users.id, id) });
