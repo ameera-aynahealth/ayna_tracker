@@ -13,8 +13,21 @@ import { redirect } from "next/navigation";
  */
 export const AYNA_EMAIL_DOMAIN = "@aynahealth.co";
 
+// Core teammate emergency access. These accounts can never be blocked by the
+// tracker's internal active/inactive flag. They still MUST authenticate through
+// Clerk with the exact Ayna email, so this does not open the tracker publicly.
+const ALWAYS_ACTIVE_AYNA_EMAILS = new Set(["puloma@aynahealth.co"]);
+
 export function isAynaEmail(email: string) {
   return email.trim().toLowerCase().endsWith(AYNA_EMAIL_DOMAIN);
+}
+
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function isAlwaysActiveAynaEmail(email: string) {
+  return ALWAYS_ACTIVE_AYNA_EMAILS.has(normalizeEmail(email));
 }
 
 export async function getAynaClerkUser() {
@@ -28,17 +41,21 @@ export async function getAynaClerkUser() {
   // Accept the account when ANY currently attached Clerk/Google email is Ayna.
   const directAynaEmail = clerkUser?.emailAddresses.find((entry) => isAynaEmail(entry.emailAddress))?.emailAddress;
   const externalAynaEmail = clerkUser?.externalAccounts.find((account) => isAynaEmail(account.emailAddress ?? ""))?.emailAddress;
-  const email = directAynaEmail ?? externalAynaEmail ?? "";
+  const email = normalizeEmail(directAynaEmail ?? externalAynaEmail ?? "");
 
   if (!isAynaEmail(email)) redirect("/not-authorized?reason=email");
 
-  return { userId, clerkUser, email: email.trim().toLowerCase() };
+  return { userId, clerkUser, email };
 }
 
 /**
  * Resolves the signed-in account to the internal Ayna users row.
  * The @aynahealth.co domain check runs every time this helper is used.
- * Internal deactivation remains an additional lock.
+ * Internal deactivation remains an additional lock for normal teammates.
+ *
+ * Puloma's exact Ayna account is protected from accidental internal lockout:
+ * once Clerk authenticates an account containing puloma@aynahealth.co, the
+ * tracker automatically keeps that internal profile active.
  *
  * First login can trigger several server-rendered requests at once. User
  * creation therefore uses ON CONFLICT DO NOTHING and then re-reads the row so
@@ -51,35 +68,44 @@ export async function getOrCreateCurrentUser() {
     email,
   } = await getAynaClerkUser();
 
+  const alwaysActive = isAlwaysActiveAynaEmail(email);
   const name = clerkUser
     ? `${clerkUser.firstName ?? ""} ${clerkUser.lastName ?? ""}`.trim() || email
     : email;
 
-  const existingByProvider = await db.query.users.findFirst({
-    where: eq(users.authProviderId, authProviderId),
-  });
+  // Read both identities up front. This also lets a protected teammate get in
+  // even if an old/stale internal row exists from a previous auth setup.
+  const [existingByProvider, existingByEmail] = await Promise.all([
+    db.query.users.findFirst({ where: eq(users.authProviderId, authProviderId) }),
+    db.query.users.findFirst({ where: eq(users.email, email) }),
+  ]);
 
   if (existingByProvider) {
-    if (!existingByProvider.active) redirect("/not-authorized?reason=inactive");
+    if (!existingByProvider.active && !alwaysActive) redirect("/not-authorized?reason=inactive");
 
+    // If a stale second row already owns the exact email, do not trigger the
+    // unique email constraint. The authenticated provider row is still safe to
+    // use, and protected accounts are reactivated automatically.
+    const emailOwnedByAnotherRow = existingByEmail && existingByEmail.id !== existingByProvider.id;
     await db.update(users).set({
-      email,
+      ...(emailOwnedByAnotherRow ? {} : { email }),
       name: name || existingByProvider.name,
       image: clerkUser?.imageUrl ?? existingByProvider.image,
+      ...(alwaysActive ? { active: true } : {}),
       updatedAt: new Date(),
     }).where(eq(users.id, existingByProvider.id));
 
     return db.query.users.findFirst({ where: eq(users.id, existingByProvider.id) });
   }
 
-  const existingByEmail = await db.query.users.findFirst({ where: eq(users.email, email) });
   if (existingByEmail) {
-    if (!existingByEmail.active) redirect("/not-authorized?reason=inactive");
+    if (!existingByEmail.active && !alwaysActive) redirect("/not-authorized?reason=inactive");
 
     await db.update(users).set({
       authProviderId,
       name: name || existingByEmail.name,
       image: clerkUser?.imageUrl ?? existingByEmail.image,
+      ...(alwaysActive ? { active: true } : {}),
       updatedAt: new Date(),
     }).where(eq(users.id, existingByEmail.id));
 
@@ -104,6 +130,7 @@ export async function getOrCreateCurrentUser() {
     name,
     image: clerkUser?.imageUrl,
     role: isFirstUser ? "admin" : "member",
+    active: true,
   }).onConflictDoNothing();
 
   // Another request may have created this exact user between the checks above
@@ -112,20 +139,25 @@ export async function getOrCreateCurrentUser() {
     where: eq(users.authProviderId, authProviderId),
   });
   if (resolvedByProvider) {
-    if (!resolvedByProvider.active) redirect("/not-authorized?reason=inactive");
+    if (!resolvedByProvider.active && !alwaysActive) redirect("/not-authorized?reason=inactive");
+    if (alwaysActive && !resolvedByProvider.active) {
+      await db.update(users).set({ active: true, updatedAt: new Date() }).where(eq(users.id, resolvedByProvider.id));
+      return db.query.users.findFirst({ where: eq(users.id, resolvedByProvider.id) });
+    }
     return resolvedByProvider;
   }
 
   const resolvedByEmail = await db.query.users.findFirst({ where: eq(users.email, email) });
   if (resolvedByEmail) {
-    if (!resolvedByEmail.active) redirect("/not-authorized?reason=inactive");
+    if (!resolvedByEmail.active && !alwaysActive) redirect("/not-authorized?reason=inactive");
 
     // Covers a rare concurrent email-linking race without creating a duplicate.
-    if (resolvedByEmail.authProviderId !== authProviderId) {
+    if (resolvedByEmail.authProviderId !== authProviderId || (alwaysActive && !resolvedByEmail.active)) {
       await db.update(users).set({
         authProviderId,
         name: name || resolvedByEmail.name,
         image: clerkUser?.imageUrl ?? resolvedByEmail.image,
+        ...(alwaysActive ? { active: true } : {}),
         updatedAt: new Date(),
       }).where(eq(users.id, resolvedByEmail.id));
     }
