@@ -10,7 +10,6 @@ import {
   ChevronLeft,
   ChevronRight,
   FolderKanban,
-  GanttChartSquare,
   Home,
   Inbox,
   LayoutDashboard,
@@ -18,6 +17,7 @@ import {
   ListTodo,
   Menu,
   Settings,
+  SquareGantt,
   Users,
   X,
 } from "lucide-react";
@@ -76,7 +76,7 @@ export function ShellClient({
     { label: "Projects", href: "/projects", icon: FolderKanban },
     { label: "Board", href: "/board", icon: LayoutDashboard },
     { label: "Calendar", href: "/calendar", icon: CalendarDays },
-    { label: "Timeline", href: "/timeline", icon: GanttChartSquare },
+    { label: "Timeline", href: "/timeline", icon: SquareGantt },
   ];
   const insight: NavItem[] = [
     { label: "Team", href: "/team", icon: Users },
