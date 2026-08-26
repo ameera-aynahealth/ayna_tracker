@@ -8,10 +8,10 @@ export default function NotAuthorizedPage() {
         <div className="font-voice text-2xl font-semibold text-accent-text mb-6">ayna</div>
         <h1 className="font-voice text-3xl font-semibold mb-3">Ayna team access only</h1>
         <p className="text-sm text-text-secondary leading-6 mb-6">
-          This tracker is only available to invited members of the Ayna Clerk organization. Signing in with any other Google or Clerk account does not grant access.
+          This tracker is only available to people signed in with an @aynahealth.co email address who are active members of the Ayna workspace.
         </p>
         <p className="text-sm text-text-secondary leading-6 mb-6">
-          If you are part of Ayna, ask an admin to invite the exact Google account you want to use, then sign in again.
+          Personal Gmail, Outlook, and other non-Ayna email accounts cannot access the tracker.
         </p>
         <div className="flex items-center gap-3">
           <UserButton afterSignOutUrl="/sign-in" />
