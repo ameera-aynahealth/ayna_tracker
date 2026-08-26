@@ -8,7 +8,10 @@ export async function getArchiveView() {
 
   const [archivedTasks, archivedProjects] = await Promise.all([
     db.query.tasks.findMany({
-      where: inArray(tasks.status, closedTaskStatuses),
+      where: or(
+        isNotNull(tasks.archivedAt),
+        inArray(tasks.status, closedTaskStatuses)
+      ),
       with: { owner: true, project: true },
       orderBy: [desc(tasks.completedAt), desc(tasks.updatedAt)],
       limit: 250,
