@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { FolderKanban, ListTodo, Search, UserRound, X } from "lucide-react";
+import { FolderKanban, ListChecks, ListTodo, Search, UserRound, X } from "lucide-react";
 import { searchWorkspace } from "@/lib/actions/search";
 
-const emptyResults = { tasks: [], projects: [], people: [] } as Awaited<ReturnType<typeof searchWorkspace>>;
+const emptyResults = { tasks: [], trackers: [], projects: [], people: [] } as Awaited<ReturnType<typeof searchWorkspace>>;
 
 export function GlobalSearch() {
   const [open, setOpen] = useState(false);
@@ -61,7 +61,7 @@ export function GlobalSearch() {
         aria-label="Search Ayna Tracker"
       >
         <Search size={15} />
-        <span className="flex-1 text-left">Search tasks and projects</span>
+        <span className="flex-1 text-left">Search Ayna</span>
         <kbd className="text-[10px] border border-border rounded px-1.5 py-0.5 text-text-muted">⌘K</kbd>
       </button>
       <button onClick={() => setOpen(true)} className="sm:hidden p-2 rounded-lg hover:bg-surface-sunk" aria-label="Search">
@@ -77,7 +77,7 @@ export function GlobalSearch() {
                 autoFocus
                 value={query}
                 onChange={(e) => onQuery(e.target.value)}
-                placeholder="Search tasks, projects, or people"
+                placeholder="Search tasks, trackers, projects, or people"
                 className="flex-1 bg-transparent outline-none text-base placeholder:text-text-muted"
               />
               {isPending && <span className="text-xs text-text-muted">Searching</span>}
@@ -88,7 +88,7 @@ export function GlobalSearch() {
               {query.trim().length < 2 ? (
                 <div className="px-3 py-8 text-center">
                   <div className="font-voice text-lg font-semibold mb-1">Find anything quickly</div>
-                  <p className="text-sm text-text-muted">Type at least two letters. Results include enough context so you never have to guess which task you are opening.</p>
+                  <p className="text-sm text-text-muted">Search the shared Ayna workspace without digging through menus.</p>
                 </div>
               ) : (
                 <>
@@ -102,8 +102,19 @@ export function GlobalSearch() {
                             <span>{task.project ?? "No project"}</span>
                             <span>{task.owner ?? "Unassigned"}</span>
                             <span className="capitalize">{task.status.replaceAll("_", " ")}</span>
-                            {task.dueAt && <span>{new Date(task.dueAt).toLocaleDateString()}</span>}
                           </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </ResultSection>
+
+                  <ResultSection title="Trackers" empty="No matching trackers">
+                    {results.trackers.map((tracker) => (
+                      <Link key={tracker.id} href={`/trackers/${tracker.id}`} onClick={close} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-surface-sunk/70">
+                        <ListChecks size={16} className="text-gold-text shrink-0" />
+                        <div>
+                          <div className="text-sm font-medium">{tracker.name}</div>
+                          <div className="text-xs text-text-muted">Tracks {tracker.itemLabel.toLowerCase()}s</div>
                         </div>
                       </Link>
                     ))}
