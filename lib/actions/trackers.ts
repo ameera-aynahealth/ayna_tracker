@@ -13,36 +13,20 @@ const templates = {
   partnerships: {
     itemLabel: "Brand",
     stages: [
-      ["new", "New"],
-      ["contacted", "Contacted"],
-      ["replied", "Replied"],
-      ["meeting", "Meeting"],
-      ["negotiating", "Negotiating"],
-      ["contract", "Contract"],
-      ["active", "Active"],
-      ["closed", "Closed"],
+      ["new", "New"], ["contacted", "Contacted"], ["replied", "Replied"], ["meeting", "Meeting"],
+      ["negotiating", "Negotiating"], ["contract", "Contract"], ["active", "Active"], ["closed", "Closed"],
     ],
   },
   influencers: {
     itemLabel: "Influencer",
     stages: [
-      ["prospect", "Prospect"],
-      ["contacted", "Contacted"],
-      ["replied", "Replied"],
-      ["negotiating", "Negotiating"],
-      ["confirmed", "Confirmed"],
-      ["posted", "Posted"],
-      ["complete", "Complete"],
+      ["prospect", "Prospect"], ["contacted", "Contacted"], ["replied", "Replied"], ["negotiating", "Negotiating"],
+      ["confirmed", "Confirmed"], ["posted", "Posted"], ["complete", "Complete"],
     ],
   },
   general: {
     itemLabel: "Item",
-    stages: [
-      ["new", "New"],
-      ["in_progress", "In progress"],
-      ["waiting", "Waiting"],
-      ["done", "Done"],
-    ],
+    stages: [["new", "New"], ["in_progress", "In progress"], ["waiting", "Waiting"], ["done", "Done"]],
   },
 } as const;
 
@@ -75,6 +59,14 @@ export async function archiveTracker(trackerId: string) {
   await requireEditPermission();
   await db.update(trackers).set({ archivedAt: new Date(), updatedAt: new Date() }).where(eq(trackers.id, trackerId));
   revalidatePath("/trackers");
+  revalidatePath("/archive");
+}
+
+export async function restoreTracker(trackerId: string) {
+  await requireEditPermission();
+  await db.update(trackers).set({ archivedAt: null, updatedAt: new Date() }).where(eq(trackers.id, trackerId));
+  revalidatePath("/trackers");
+  revalidatePath("/archive");
 }
 
 export async function createTrackerItem(input: {
@@ -161,11 +153,7 @@ export async function createTrackerFollowupTask(input: { itemId: string; tracker
     priority: item.actionState === "follow_up" || item.actionState === "needs_reply" ? "high" : "medium",
   });
 
-  await db.update(trackerItems).set({
-    actionState: "waiting",
-    updatedAt: new Date(),
-  }).where(eq(trackerItems.id, item.id));
-
+  await db.update(trackerItems).set({ actionState: "waiting", updatedAt: new Date() }).where(eq(trackerItems.id, item.id));
   revalidatePath(`/trackers/${input.trackerId}`);
   return result.id;
 }
