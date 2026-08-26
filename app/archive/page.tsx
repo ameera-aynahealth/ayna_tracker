@@ -6,6 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { ProjectDeleteButton } from "@/components/project-delete-button";
 import { TaskDeleteButton } from "@/components/task-delete-button";
 import { TrackerRestoreButton } from "@/components/tracker-restore-button";
+import { PermanentDeleteButton } from "@/components/permanent-delete-button";
 import { TaskRow } from "@/components/task-row";
 import { MetricCard } from "@/components/visuals";
 
@@ -15,13 +16,16 @@ export default async function ArchivePage() {
   const [archive, archivedTrackers] = await Promise.all([getArchiveView(), getArchivedTrackers()]);
   const completed = archive.tasks.filter((task) => task.status === "completed").length;
   const cancelled = archive.tasks.filter((task) => task.status === "cancelled").length;
+  const canPermanentlyDelete = user.role === "admin";
 
   return (
     <AppShell active="Archive" currentUser={user}>
       <div className="mb-7">
         <p className="text-xs uppercase tracking-[0.12em] text-text-muted font-semibold mb-2">Past work</p>
         <h1 className="font-voice text-3xl font-semibold">Archive</h1>
-        <p className="text-sm text-text-secondary mt-1">Deleted tasks, projects, and trackers are recoverable here, so accidental cleanup never destroys Ayna work.</p>
+        <p className="text-sm text-text-secondary mt-1">
+          Deleted tasks, projects, and trackers land here first so they can be restored. Admins can permanently delete archived work after a second warning.
+        </p>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-7">
@@ -39,7 +43,10 @@ export default async function ArchivePage() {
               <div key={tracker.id} className="border border-border bg-surface rounded-2xl p-4">
                 <div className="font-medium text-sm">{tracker.name}</div>
                 <div className="text-xs text-text-muted mt-1">Tracks {tracker.itemLabel.toLowerCase()}s</div>
-                <div className="mt-3"><TrackerRestoreButton trackerId={tracker.id} /></div>
+                <div className="mt-3 flex flex-wrap items-start gap-2">
+                  <TrackerRestoreButton trackerId={tracker.id} />
+                  {canPermanentlyDelete && <PermanentDeleteButton kind="tracker" id={tracker.id} />}
+                </div>
               </div>
             ))}
           </div>
@@ -56,7 +63,12 @@ export default async function ArchivePage() {
                   <div className="font-medium text-sm">{project.name}</div>
                   <div className="text-xs text-text-muted mt-1 capitalize">{project.status.replaceAll("_", " ")} · {project.owner?.name ?? "No owner"}</div>
                 </Link>
-                {project.archivedAt && <div className="mt-3"><ProjectDeleteButton projectId={project.id} archived /></div>}
+                {project.archivedAt && (
+                  <div className="mt-3 flex flex-wrap items-start gap-2">
+                    <ProjectDeleteButton projectId={project.id} archived />
+                    {canPermanentlyDelete && <PermanentDeleteButton kind="project" id={project.id} />}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -67,9 +79,14 @@ export default async function ArchivePage() {
         <h2 className="font-voice text-xl font-semibold mb-3">Tasks</h2>
         <div className="border border-border bg-surface divide-y divide-border overflow-hidden" style={{ borderRadius: "20px 10px 10px 10px" }}>
           {archive.tasks.map((task) => (
-            <div key={task.id} className="flex items-center min-w-0">
+            <div key={task.id} className="flex items-center min-w-0 gap-2">
               <div className="flex-1 min-w-0"><TaskRow task={task} /></div>
-              {task.archivedAt && <div className="pr-3 shrink-0"><TaskDeleteButton taskId={task.id} archived /></div>}
+              {task.archivedAt && (
+                <div className="pr-3 shrink-0 flex flex-wrap items-start gap-1">
+                  <TaskDeleteButton taskId={task.id} archived />
+                  {canPermanentlyDelete && <PermanentDeleteButton kind="task" id={task.id} />}
+                </div>
+              )}
             </div>
           ))}
           {archive.tasks.length === 0 && <div className="p-10 text-center text-sm text-text-muted">Nothing has been archived yet.</div>}
