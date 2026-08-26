@@ -2,6 +2,109 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body {
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  min-height: 100%;
   background: #F7F1E8;
+}
+
+body {
+  margin: 0;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: #F3E1D3;
+  color: #7C3D1F;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #A8532B;
+  outline-offset: 2px;
+}
+
+@layer components {
+  .field-input {
+    @apply w-full border border-border rounded-xl px-3 py-2.5 bg-surface text-sm outline-none transition-colors;
+  }
+
+  .field-input:focus {
+    @apply border-accent;
+  }
+
+  .property-select {
+    @apply w-full border border-border rounded-xl px-3 py-2.5 bg-surface text-sm outline-none transition-colors;
+  }
+
+  .property-select:focus {
+    @apply border-accent;
+  }
+
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: #F1E9DC;
+  }
+
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
+    animation: skeleton-shimmer 1.3s infinite;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(18px);
+    opacity: 0.7;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
