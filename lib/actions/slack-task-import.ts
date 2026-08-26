@@ -8,7 +8,8 @@ import { projects, tasks, users } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth";
 
 type OwnerKey = "ameera" | "puloma" | "eliz" | null;
-type AreaKey = "product" | "partnerships" | "marketing" | "operations" | "fundraising" | "recruiting";
+type AreaKey = "product" | "partnerships" | "marketing" | "operations" | "fundraising" | "recruiting" | "mvp" | "legal";
+type TaskStatus = "backlog" | "not_started" | "in_progress" | "waiting" | "blocked" | "needs_review" | "completed" | "cancelled";
 
 type SeedTask = {
   title: string;
@@ -18,6 +19,9 @@ type SeedTask = {
   taskType: "task" | "follow_up" | "meeting_action_item" | "approval" | "deliverable" | "bug" | "content" | "partnership" | "administrative" | "milestone" | "research";
   source: string;
   note: string;
+  dueAt?: string;
+  status?: TaskStatus;
+  waitingOnName?: string;
 };
 
 const areaNames: Record<AreaKey, string> = {
@@ -27,6 +31,8 @@ const areaNames: Record<AreaKey, string> = {
   operations: "Operations",
   fundraising: "Fundraising",
   recruiting: "Team & Recruiting",
+  mvp: "MVP & User Research",
+  legal: "Legal & Compliance",
 };
 
 const ownerEmails: Record<Exclude<OwnerKey, null>, string> = {
@@ -44,6 +50,9 @@ const channels = {
   fundraising: "https://aynahealthinc.slack.com/archives/C0BL2PBC3NZ",
   allHands: "https://aynahealthinc.slack.com/archives/C0BKEUMCG9M",
 };
+
+const asanaSource = "Legacy Asana task list supplied during tracker recovery";
+const gmailSource = "Ameera's Ayna Gmail partnership inbox reviewed during tracker recovery";
 
 const recoveredTasks: SeedTask[] = [
   { title: "Add Gemini meeting-notes folder shortcut to shared Meeting Recordings", area: "operations", owner: "ameera", priority: "high", taskType: "meeting_action_item", source: "https://aynahealthinc.slack.com/archives/C0BMCBJEG20/p1787699944794919", note: "Puloma followed up on Aug 25 asking whether the shortcut had been added. No completion confirmation was found in Slack." },
@@ -74,9 +83,52 @@ const recoveredTasks: SeedTask[] = [
   { title: "Define and document brand-partner vetting criteria", area: "partnerships", owner: null, priority: "high", taskType: "research", source: channels.meetings, note: "Multiple all-hands agendas and partnership discussions called for a repeatable vetting process and consistent due-diligence parameters for every brand." },
   { title: "Define free vs paid Ayna tiering", area: "product", owner: null, priority: "medium", taskType: "research", source: channels.meetings, note: "All-hands agenda explicitly called for determining free and paid version access levels. No completion confirmation was found." },
   { title: "Recruit or identify a replacement engineering teammate", area: "recruiting", owner: null, priority: "high", taskType: "administrative", source: channels.allHands, note: "Aditi was fully offboarded on Aug 26 and the team immediately discussed looking for a replacement. Left unassigned for the remaining team to decide ownership." },
+
+  { title: "Set up discovery call with Shruti Gajjar and demo the platform", area: "mvp", owner: "puloma", priority: "high", taskType: "follow_up", source: asanaSource, note: "Legacy Asana task said to wait for Shruti's response, set up a discovery call, and demo the platform. No Slack completion evidence was found.", dueAt: "2026-08-21" },
+  { title: "Call Deanna Oliver to onboard her as an MVP user", area: "mvp", owner: null, priority: "high", taskType: "follow_up", source: asanaSource, note: "Legacy Asana onboarding task. No Slack completion evidence was found; left unassigned.", dueAt: "2026-07-30" },
+  { title: "Follow up with Amelia for MVP feedback", area: "mvp", owner: null, priority: "medium", taskType: "follow_up", source: asanaSource, note: "Legacy Asana follow-up. No Slack completion evidence was found; left unassigned.", dueAt: "2026-08-07" },
+  { title: "Follow up with Kimari for MVP feedback", area: "mvp", owner: null, priority: "medium", taskType: "follow_up", source: asanaSource, note: "Legacy Asana follow-up. No Slack completion evidence was found; left unassigned.", dueAt: "2026-08-21" },
+  { title: "Track Sukriti's MVP feedback and resulting changes", area: "mvp", owner: "puloma", priority: "medium", taskType: "meeting_action_item", source: asanaSource, note: "Legacy Asana task assigned to Puloma. No clear Slack completion evidence was found." },
+  { title: "Add Substack signup to the waitlist signup flow", area: "marketing", owner: null, priority: "medium", taskType: "deliverable", source: asanaSource, note: "Asana originally said to auto-add waitlist members to Substack. Slack later established there was no usable Substack API for this, so the agreed fallback was to point new waitlist signups directly to a Substack embed/signup form. This task captures the unresolved implementation rather than the obsolete API approach." },
+  { title: "Create an adaptive health information library for users", area: "product", owner: null, priority: "medium", taskType: "research", source: asanaSource, note: "Legacy Product Development roadmap task. No completion evidence was found." },
+  { title: "Add email notifications for meaningful Ayna platform updates", area: "product", owner: null, priority: "medium", taskType: "deliverable", source: asanaSource, note: "Legacy Product Development task. This refers to the consumer Ayna platform, not tracker reminder emails." },
+  { title: "Implement option to import wearable data", area: "product", owner: null, priority: "medium", taskType: "deliverable", source: asanaSource, note: "Legacy Product Development roadmap task. No completion evidence was found." },
+  { title: "Explore text notifications for newly applicable products", area: "product", owner: null, priority: "low", taskType: "research", source: asanaSource, note: "Legacy Product Development task. Twilio texting exists for outreach, but no evidence was found that product-triggered notifications were implemented." },
+  { title: "Define how Ayna should account for brand loyalty in recommendations", area: "product", owner: null, priority: "medium", taskType: "research", source: asanaSource, note: "Legacy Product Development research item. No completion evidence was found." },
+  { title: "Research BAA costs and when Ayna would need one", area: "legal", owner: null, priority: "medium", taskType: "research", source: asanaSource, note: "Legacy legal/product research task. No completion evidence was found." },
+  { title: "Research agentic personalization tools for Ayna", area: "product", owner: null, priority: "high", taskType: "research", source: asanaSource, note: "Legacy Product Development task marked high priority. No completion evidence was found." },
+  { title: "Review the LLM guardrails reel and capture relevant safeguards", area: "product", owner: "puloma", priority: "low", taskType: "research", source: asanaSource, note: "Legacy research task assigned to Puloma. No completion evidence was found." },
+  { title: "Research whether women outside the US can use Ayna", area: "product", owner: "puloma", priority: "medium", taskType: "research", source: asanaSource, note: "Legacy international-access research task assigned to Puloma." },
+  { title: "Research whether Ayna could participate in insurance plans outside the US", area: "product", owner: "puloma", priority: "medium", taskType: "research", source: asanaSource, note: "Legacy international insurance research task assigned to Puloma." },
+  { title: "Follow up with Cooley / Elizabeth", area: "legal", owner: null, priority: "medium", taskType: "follow_up", source: asanaSource, note: "Legacy legal follow-up. No completion evidence was found; left unassigned." },
+  { title: "Review LegalZoom options and Stripe discount before legal setup decisions", area: "legal", owner: null, priority: "medium", taskType: "research", source: asanaSource, note: "Legacy legal task noting that Stripe had a LegalZoom discount. No completion evidence was found." },
+  { title: "Apply to the Healthcare Innovation Competition", area: "fundraising", owner: null, priority: "medium", taskType: "administrative", source: asanaSource, note: "Legacy fundraising/accelerator task with a Dec 1 deadline.", dueAt: "2026-12-01" },
+  { title: "Follow up on Speedrun / a16z after Ashley's connection", area: "fundraising", owner: "puloma", priority: "low", taskType: "follow_up", source: asanaSource, note: "Legacy fundraising task assigned to Puloma and explicitly waiting on Ashley to connect the team with an a16z employee.", status: "waiting", waitingOnName: "Ashley" },
+  { title: "Complete Founders Inc application", area: "fundraising", owner: "puloma", priority: "high", taskType: "administrative", source: asanaSource, note: "Legacy fundraising task assigned to Puloma. No completion evidence was found." },
+  { title: "Complete ODF application and add it to the funding spreadsheet", area: "fundraising", owner: "puloma", priority: "medium", taskType: "administrative", source: asanaSource, note: "Combined duplicate legacy Asana ODF tasks: complete the application and make sure it is recorded in the spreadsheet." },
+  { title: "Research Menlo Anthology Fund with Anthropic", area: "fundraising", owner: null, priority: "medium", taskType: "research", source: asanaSource, note: "Legacy fundraising opportunity. No completion evidence was found." },
+  { title: "Research Menlo Fellowship", area: "fundraising", owner: null, priority: "medium", taskType: "research", source: asanaSource, note: "Legacy fundraising opportunity. No completion evidence was found." },
+  { title: "Update funding application spreadsheet with aligned funds and accelerators", area: "fundraising", owner: null, priority: "medium", taskType: "administrative", source: asanaSource, note: "Legacy fundraising task to keep the application pipeline current." },
+  { title: "Research FC Build accelerator", area: "fundraising", owner: null, priority: "medium", taskType: "research", source: asanaSource, note: "Legacy accelerator task. No completion evidence was found." },
+  { title: "Set up DocSend perk through Stripe Atlas", area: "fundraising", owner: "puloma", priority: "high", taskType: "administrative", source: asanaSource, note: "Legacy fundraising operations task assigned to Puloma." },
+  { title: "Revise fundraising deck before restarting the raise", area: "fundraising", owner: "puloma", priority: "high", taskType: "deliverable", source: asanaSource, note: "Legacy task explicitly marked DO BEFORE RESTARTING RAISING." },
+  { title: "Evaluate setting up a friends-and-family round", area: "fundraising", owner: "puloma", priority: "medium", taskType: "research", source: asanaSource, note: "Legacy fundraising task assigned to Puloma.", dueAt: "2026-08-21" },
+  { title: "Set up call with Erika's connection", area: "fundraising", owner: "puloma", priority: "medium", taskType: "follow_up", source: asanaSource, note: "Legacy networking/fundraising task assigned to Puloma. No completion evidence was found.", dueAt: "2026-08-03" },
+  { title: "Follow up with Riya Sharma", area: "fundraising", owner: "puloma", priority: "medium", taskType: "follow_up", source: asanaSource, note: "Legacy networking follow-up assigned to Puloma. No completion evidence was found.", dueAt: "2026-07-31" },
+
+  { title: "Complete Elitone affiliate signup and accept affiliate terms", area: "partnerships", owner: "ameera", priority: "high", taskType: "partnership", source: gmailSource, note: "Gloria Kolb replied on Aug 26 asking Ayna to sign up through Elitone's affiliate program, agree to the terms, and choose login credentials. No later completion email was found." },
+  { title: "Submit Corgi Cafe venue request form", area: "marketing", owner: null, priority: "medium", taskType: "administrative", source: gmailSource, note: "Madeline Ford replied on Aug 26 that the team should fill out Corgi's event-space request form. Left unassigned because the thread is shared with Eliz." },
+  { title: "Set up LOLA affiliate link through Levanta / Amazon Creator Connections", area: "partnerships", owner: "ameera", priority: "high", taskType: "partnership", source: gmailSource, note: "LOLA's team said the best affiliate-link route is Amazon Creator Connections via Levanta. They also confirmed they are happy to reshare Ayna content on stories." },
+  { title: "Complete Proov affiliate enrollment with Alyssa", area: "partnerships", owner: "ameera", priority: "high", taskType: "partnership", source: gmailSource, note: "Amy Beckley introduced Alyssa Stouffer to help Ayna get enrolled in Proov's affiliate program. No completion evidence was found." },
+  { title: "Follow up with Alubri on partnership next steps after the meeting", area: "partnerships", owner: "ameera", priority: "medium", taskType: "follow_up", source: gmailSource, note: "Mariah Eckhardt sent a positive post-meeting note saying Alubri was excited about what Ayna is building. Keep a concrete next-step follow-up in the tracker rather than leaving the thread implicit." },
+  { title: "Route Origin partnership outreach to David while Carine is OOO", area: "partnerships", owner: "ameera", priority: "medium", taskType: "follow_up", source: gmailSource, note: "Carine Carmy's OOO message directed partnership matters to david@theoriginway.com. No later handoff was found in the reviewed inbox." },
 ];
 
-export async function importRecoveredSlackTasks() {
+function dueDate(value?: string) {
+  return value ? new Date(`${value}T17:00:00-04:00`) : null;
+}
+
+export async function importRecoveredWorkTasks() {
   const admin = await requireAdmin();
   const workspaceId = admin.workspaceId;
 
@@ -92,7 +144,7 @@ export async function importRecoveredSlackTasks() {
     let project = await db.query.projects.findFirst({ where: and(eq(projects.workspaceId, workspaceId), eq(projects.name, name)) });
     if (!project) {
       const id = nanoid();
-      await db.insert(projects).values({ id, workspaceId, name, description: "Operational work recovered from Ayna Slack during the August 2026 tracker rebuild.", status: "active", priority: area === "product" || area === "partnerships" ? "high" : "medium" });
+      await db.insert(projects).values({ id, workspaceId, name, description: "Operational work recovered from Ayna's legacy task systems, Slack, and Gmail during the August 2026 tracker rebuild.", status: "active", priority: area === "product" || area === "partnerships" ? "high" : "medium" });
       project = await db.query.projects.findFirst({ where: eq(projects.id, id) });
       projectsCreated += 1;
     }
@@ -109,12 +161,22 @@ export async function importRecoveredSlackTasks() {
       continue;
     }
 
+    const dueAt = dueDate(item.dueAt);
     await db.insert(tasks).values({
-      id: nanoid(), workspaceId, projectId: projectIds[item.area], title: item.title,
-      description: `${item.note}\n\nRecovered from Slack: ${item.source}`,
-      status: "not_started", priority: item.priority, taskType: item.taskType,
+      id: nanoid(),
+      workspaceId,
+      projectId: projectIds[item.area],
+      title: item.title,
+      description: `${item.note}\n\nRecovered source: ${item.source}`,
+      status: item.status ?? "not_started",
+      priority: item.priority,
+      taskType: item.taskType,
       ownerId: item.owner ? ownerIds[item.owner] ?? null : null,
       createdById: admin.id,
+      dueAt,
+      originalDueAt: dueAt,
+      waitingOnName: item.waitingOnName ?? null,
+      waitingSince: item.status === "waiting" ? new Date() : null,
     });
     created += 1;
   }
