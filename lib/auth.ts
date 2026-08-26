@@ -13,10 +13,12 @@ import { redirect } from "next/navigation";
  */
 export const AYNA_EMAIL_DOMAIN = "@aynahealth.co";
 
-// Core teammate emergency access. These accounts can never be blocked by the
-// tracker's internal active/inactive flag. They still MUST authenticate through
-// Clerk with the exact Ayna email, so this does not open the tracker publicly.
+// Core teammate emergency access. These exact identities can never be blocked
+// by the tracker's internal active/inactive flag. The Clerk user ID is included
+// as a second safety net so a stale/mislinked internal email cannot lock Puloma
+// out after Clerk has already authenticated her account.
 const ALWAYS_ACTIVE_AYNA_EMAILS = new Set(["puloma@aynahealth.co"]);
+const ALWAYS_ACTIVE_CLERK_USER_IDS = new Set(["user_3ITAbnr6N1meBHq4v3IMp2ym2Xo"]);
 
 export function isAynaEmail(email: string) {
   return email.trim().toLowerCase().endsWith(AYNA_EMAIL_DOMAIN);
@@ -26,8 +28,9 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-function isAlwaysActiveAynaEmail(email: string) {
-  return ALWAYS_ACTIVE_AYNA_EMAILS.has(normalizeEmail(email));
+function isAlwaysActiveIdentity(authProviderId: string, email: string) {
+  return ALWAYS_ACTIVE_CLERK_USER_IDS.has(authProviderId)
+    || ALWAYS_ACTIVE_AYNA_EMAILS.has(normalizeEmail(email));
 }
 
 export async function getAynaClerkUser() {
@@ -43,9 +46,18 @@ export async function getAynaClerkUser() {
   const externalAynaEmail = clerkUser?.externalAccounts.find((account) => isAynaEmail(account.emailAddress ?? ""))?.emailAddress;
   const email = normalizeEmail(directAynaEmail ?? externalAynaEmail ?? "");
 
-  if (!isAynaEmail(email)) redirect("/not-authorized?reason=email");
+  // Puloma's exact Clerk identity is an emergency-safe identity. It may pass
+  // even if Clerk temporarily fails to expose the linked email in currentUser;
+  // we still canonicalize her internal email to the Ayna address below.
+  if (!isAynaEmail(email) && !ALWAYS_ACTIVE_CLERK_USER_IDS.has(userId)) {
+    redirect("/not-authorized?reason=email");
+  }
 
-  return { userId, clerkUser, email };
+  return {
+    userId,
+    clerkUser,
+    email: ALWAYS_ACTIVE_CLERK_USER_IDS.has(userId) ? "puloma@aynahealth.co" : email,
+  };
 }
 
 /**
@@ -53,9 +65,9 @@ export async function getAynaClerkUser() {
  * The @aynahealth.co domain check runs every time this helper is used.
  * Internal deactivation remains an additional lock for normal teammates.
  *
- * Puloma's exact Ayna account is protected from accidental internal lockout:
- * once Clerk authenticates an account containing puloma@aynahealth.co, the
- * tracker automatically keeps that internal profile active.
+ * Puloma's exact Ayna email + Clerk user ID are protected from accidental
+ * internal lockout: once Clerk authenticates that identity, the tracker
+ * automatically reactivates the canonical internal profile.
  *
  * First login can trigger several server-rendered requests at once. User
  * creation therefore uses ON CONFLICT DO NOTHING and then re-reads the row so
@@ -68,7 +80,7 @@ export async function getOrCreateCurrentUser() {
     email,
   } = await getAynaClerkUser();
 
-  const alwaysActive = isAlwaysActiveAynaEmail(email);
+  const alwaysActive = isAlwaysActiveIdentity(authProviderId, email);
   const name = clerkUser
     ? `${clerkUser.firstName ?? ""} ${clerkUser.lastName ?? ""}`.trim() || email
     : email;
