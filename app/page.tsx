@@ -1,162 +1,113 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { getOrCreateCurrentUser } from "@/lib/auth";
-import {
-  getDashboardVisuals,
-  getHomeSummary,
-  getProjectsWithProgress,
-  getTeamWorkload,
-  getTopPriorities,
-} from "@/lib/queries";
+import { getHomeSummary, getProjectsWithProgress, getTopPriorities } from "@/lib/queries";
 import { AppShell } from "@/components/app-shell";
-import { PriorityCard } from "@/components/priority-card";
-import {
-  Card,
-  HorizontalBars,
-  MetricCard,
-  MiniColumnChart,
-  ProgressRing,
-  StackedDistribution,
-  humanize,
-} from "@/components/visuals";
+import { TaskRow } from "@/components/task-row";
 
 export default async function HomePage() {
   const user = await getOrCreateCurrentUser();
   if (!user) return null;
 
-  const [summary, priorities, projects, team, visuals] = await Promise.all([
+  const [summary, priorities, projects] = await Promise.all([
     getHomeSummary(user.id),
-    getTopPriorities(user.id),
+    getTopPriorities(user.id, 5),
     getProjectsWithProgress(),
-    getTeamWorkload(),
-    getDashboardVisuals(user.id),
   ]);
 
   const firstName = user.name.split(" ")[0] || user.name;
-  const statusData = Object.entries(visuals.statusCounts).map(([label, value]) => ({ label, value }));
-  const deadlineData = visuals.nextSevenDays.map((day, index) => ({
-    label: index === 0 ? "Today" : day.date.toLocaleDateString("en-US", { weekday: "short" }),
-    value: day.count,
-  }));
-  const teamMax = Math.max(1, ...team.map((row) => row.effortMinutes));
 
   return (
     <AppShell active="Home" currentUser={user}>
       <section className="mb-8">
-        <p className="text-xs uppercase tracking-[0.12em] text-text-muted font-semibold mb-2">Ayna workspace</p>
         <h1 className="font-voice text-3xl sm:text-4xl font-semibold tracking-tight">Welcome back, {firstName}</h1>
         <p className="font-voice text-xl sm:text-2xl text-text-secondary mt-1">Ready to work on Ayna?</p>
-        <p className="text-sm text-text-secondary mt-3 max-w-3xl">
-          You have{" "}
-          <Link href="/my-work?view=overdue" className="text-brick-text font-semibold hover:underline">{summary.overdue} overdue</Link>,{" "}
-          <Link href="/my-work?view=today" className="text-gold-text font-semibold hover:underline">{summary.dueToday} due today</Link>,{" "}
-          <Link href="/my-work?view=waiting" className="text-plum-text font-semibold hover:underline">{summary.waiting} waiting</Link>, and{" "}
-          <Link href="/my-work?view=blocked" className="text-plum-text font-semibold hover:underline">{summary.blocked} blocked</Link>.
-        </p>
       </section>
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-7">
-        <MetricCard label="Overdue" value={summary.overdue} detail="Needs attention" tone="brick" href="/my-work?view=overdue" />
-        <MetricCard label="Due today" value={summary.dueToday} detail="Your immediate work" tone="gold" href="/my-work?view=today" />
-        <MetricCard label="Due this week" value={summary.dueThisWeek} detail="Next seven days" tone="accent" href="/my-work?view=upcoming" />
-        <MetricCard label="Blocked" value={summary.blocked} detail="Needs an unblock" tone="plum" href="/my-work?view=blocked" />
+      <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-7 max-w-3xl">
+        <HomeSignal label="Overdue" value={summary.overdue} href="/tasks" tone="brick" />
+        <HomeSignal label="Due today" value={summary.dueToday} href="/tasks" tone="gold" />
+        <HomeSignal label="Waiting" value={summary.waiting} href="/tasks" tone="plum" />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 mb-4">
-        <Card
-          title="What should I work on next?"
-          subtitle="Your highest-impact work, automatically prioritized."
-          className="xl:col-span-7"
-          action={<Link href="/my-work" className="text-xs font-semibold text-accent-text flex items-center gap-1">View all <ArrowRight size={13} /></Link>}
-        >
-          {priorities.length === 0 ? (
-            <div className="py-8 text-center">
-              <div className="font-voice text-lg font-semibold">Nothing urgent right now</div>
-              <p className="text-sm text-text-muted mt-1">Your priority queue is clear.</p>
+      <div className="grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)] gap-5">
+        <section>
+          <div className="flex items-end justify-between gap-4 mb-3">
+            <div>
+              <h2 className="font-voice text-xl font-semibold">Your day</h2>
+              <p className="text-xs text-text-muted mt-0.5">The few things most worth moving next.</p>
             </div>
-          ) : (
-            <div className="grid sm:grid-cols-2 gap-3">
-              {priorities.slice(0, 4).map((task) => <PriorityCard key={task.id} task={task} />)}
+            <Link href="/tasks" className="text-xs font-semibold text-accent-text inline-flex items-center gap-1">All tasks <ArrowRight size={12} /></Link>
+          </div>
+          <div className="border border-border bg-surface divide-y divide-border overflow-hidden rounded-2xl">
+            {priorities.map((task) => <TaskRow key={task.id} task={task} />)}
+            {priorities.length === 0 && (
+              <div className="p-10 text-center">
+                <div className="font-voice text-lg font-semibold">Nothing urgent right now</div>
+                <p className="text-sm text-text-muted mt-1">Your priority queue is clear.</p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <div className="space-y-5">
+          <section>
+            <div className="flex items-end justify-between gap-4 mb-3">
+              <div>
+                <h2 className="font-voice text-xl font-semibold">Active projects</h2>
+                <p className="text-xs text-text-muted mt-0.5">A quick progress check.</p>
+              </div>
+              <Link href="/projects" className="text-xs font-semibold text-accent-text">View all</Link>
             </div>
-          )}
-        </Card>
-
-        <Card title="Next seven days" subtitle="Your deadline load by day." className="xl:col-span-5">
-          <MiniColumnChart data={deadlineData} />
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 mb-4">
-        <Card
-          title="Project health"
-          subtitle="Progress and problems across active projects."
-          className="xl:col-span-7"
-          action={<Link href="/projects" className="text-xs font-semibold text-accent-text flex items-center gap-1">All projects <ArrowRight size={13} /></Link>}
-        >
-          <div className="grid sm:grid-cols-2 gap-3">
-            {projects.slice(0, 4).map((project) => (
-              <Link key={project.id} href={`/projects/${project.id}`} className="group rounded-2xl bg-page/65 border border-border p-4 hover:border-border-strong transition-colors">
-                <div className="flex items-start gap-4">
-                  <ProgressRing value={project.progressPct} size={74} />
-                  <div className="min-w-0 flex-1 pt-1">
-                    <div className="font-medium text-sm leading-5 group-hover:text-accent-text truncate">{project.name}</div>
-                    <div className="text-xs text-text-muted capitalize mt-1">{humanize(project.health)}</div>
-                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-text-secondary mt-2">
-                      <span>{project.tasksDone}/{project.taskCount} complete</span>
+            <div className="border border-border bg-surface rounded-2xl divide-y divide-border overflow-hidden">
+              {projects.slice(0, 4).map((project) => (
+                <Link key={project.id} href={`/projects/${project.id}`} className="block p-4 hover:bg-page/50">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-medium truncate">{project.name}</div>
+                    <div className="text-xs font-semibold text-text-secondary">{project.progressPct}%</div>
+                  </div>
+                  <div className="h-1.5 bg-surface-sunk rounded-full mt-2.5 overflow-hidden">
+                    <div className="h-full bg-accent rounded-full" style={{ width: `${project.progressPct}%` }} />
+                  </div>
+                  {(project.overdueCount > 0 || project.blockedCount > 0) && (
+                    <div className="text-[11px] text-text-muted mt-2">
                       {project.overdueCount > 0 && <span className="text-brick-text font-semibold">{project.overdueCount} overdue</span>}
+                      {project.overdueCount > 0 && project.blockedCount > 0 && <span> · </span>}
                       {project.blockedCount > 0 && <span className="text-plum-text font-semibold">{project.blockedCount} blocked</span>}
                     </div>
-                  </div>
-                </div>
-              </Link>
-            ))}
-            {projects.length === 0 && <p className="text-sm text-text-muted py-5">No active projects yet.</p>}
-          </div>
-        </Card>
+                  )}
+                </Link>
+              ))}
+              {projects.length === 0 && <div className="p-5 text-sm text-text-muted">No active projects yet.</div>}
+            </div>
+          </section>
 
-        <Card title="My work mix" subtitle={`${summary.open} open items across statuses.`} className="xl:col-span-5">
-          <StackedDistribution data={statusData} />
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-        <Card
-          title="Team workload"
-          subtitle="A planning signal based on estimated effort, not a productivity score."
-          className="xl:col-span-7"
-          action={<Link href="/team" className="text-xs font-semibold text-accent-text flex items-center gap-1">Team view <ArrowRight size={13} /></Link>}
-        >
-          <HorizontalBars
-            data={team.map((row) => ({
-              label: row.user.name,
-              value: row.effortMinutes,
-              detail: `${row.active} active${row.overdue ? ` · ${row.overdue} late` : ""}`,
-            }))}
-            max={teamMax}
-          />
-        </Card>
-
-        <Card title="Needs attention" subtitle="The signals worth checking before you start." className="xl:col-span-5">
-          <div className="grid grid-cols-2 gap-3">
-            <Link href="/my-work?view=overdue" className="rounded-2xl bg-brick-soft p-4 hover:-translate-y-0.5 transition-transform">
-              <div className="font-voice text-2xl font-semibold text-brick-text">{summary.overdue}</div>
-              <div className="text-xs text-brick-text mt-1">Overdue</div>
-            </Link>
-            <Link href="/my-work?view=review" className="rounded-2xl bg-gold-soft p-4 hover:-translate-y-0.5 transition-transform">
-              <div className="font-voice text-2xl font-semibold text-gold-text">{summary.needsReview}</div>
-              <div className="text-xs text-gold-text mt-1">Needs review</div>
-            </Link>
-            <Link href="/my-work?view=blocked" className="rounded-2xl bg-plum-soft p-4 hover:-translate-y-0.5 transition-transform">
-              <div className="font-voice text-2xl font-semibold text-plum-text">{summary.blocked}</div>
-              <div className="text-xs text-plum-text mt-1">Blocked</div>
-            </Link>
-            <Link href="/my-work?view=waiting" className="rounded-2xl bg-sage-soft p-4 hover:-translate-y-0.5 transition-transform">
-              <div className="font-voice text-2xl font-semibold text-sage-text">{summary.waiting}</div>
-              <div className="text-xs text-sage-text mt-1">Waiting</div>
-            </Link>
-          </div>
-        </Card>
+          <Link href="/trackers" className="block border border-border bg-surface rounded-2xl p-5 hover:border-border-strong group">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-voice text-xl font-semibold group-hover:text-accent-text">Trackers</h2>
+                <p className="text-sm text-text-secondary mt-1">Partnerships, influencers, outreach, and anything else your team needs to keep moving.</p>
+              </div>
+              <ArrowRight size={17} className="text-text-muted group-hover:text-accent-text shrink-0" />
+            </div>
+          </Link>
+        </div>
       </div>
     </AppShell>
+  );
+}
+
+function HomeSignal({ label, value, href, tone }: { label: string; value: number; href: string; tone: "brick" | "gold" | "plum" }) {
+  const classes = {
+    brick: "bg-brick-soft text-brick-text",
+    gold: "bg-gold-soft text-gold-text",
+    plum: "bg-plum-soft text-plum-text",
+  }[tone];
+
+  return (
+    <Link href={href} className={`rounded-2xl p-3 sm:p-4 ${classes} hover:-translate-y-0.5 transition-transform`}>
+      <div className="font-voice text-2xl sm:text-3xl font-semibold">{value}</div>
+      <div className="text-[11px] sm:text-xs mt-1 font-medium">{label}</div>
+    </Link>
   );
 }
