@@ -11,8 +11,6 @@ import {
   ChevronRight,
   FolderKanban,
   Home,
-  Inbox,
-  LayoutDashboard,
   ListChecks,
   ListTodo,
   Menu,
@@ -66,19 +64,16 @@ export function ShellClient({
     });
   }
 
+  // Keep the everyday navigation intentionally short. Advanced planning views
+  // still exist, but they no longer compete with the places the team uses daily.
   const primary: NavItem[] = [
     { label: "Home", href: "/", icon: Home },
-    { label: "My Work", href: "/my-work", icon: ListChecks, count: shellData.overdueCount || shellData.myWorkCount },
-    { label: "Inbox", href: "/inbox", icon: Inbox, count: shellData.unreadCount },
-  ];
-  const planning: NavItem[] = [
-    { label: "All Tasks", href: "/tasks", icon: ListTodo },
+    { label: "Tasks", href: "/tasks", icon: ListTodo, count: shellData.overdueCount || undefined },
+    { label: "Trackers", href: "/trackers", icon: ListChecks },
     { label: "Projects", href: "/projects", icon: FolderKanban },
-    { label: "Board", href: "/board", icon: LayoutDashboard },
     { label: "Calendar", href: "/calendar", icon: CalendarDays },
-    { label: "Timeline", href: "/timeline", icon: CalendarDays },
   ];
-  const insight: NavItem[] = [
+  const more: NavItem[] = [
     { label: "Team", href: "/team", icon: Users },
     { label: "Analytics", href: "/analytics", icon: BarChart3 },
     { label: "Archive", href: "/archive", icon: Archive },
@@ -99,12 +94,9 @@ export function ShellClient({
 
       <div className="flex-1 overflow-y-auto px-2.5 py-4">
         <NavGroup items={primary} active={active} collapsed={collapsed} onNavigate={() => setMobileOpen(false)} />
-        {!collapsed && <div className="px-2.5 pt-5 pb-1.5 text-[10px] uppercase tracking-[0.13em] font-semibold text-text-muted">Plan</div>}
-        {collapsed && <div className="h-3" />}
-        <NavGroup items={planning} active={active} collapsed={collapsed} onNavigate={() => setMobileOpen(false)} />
-        {!collapsed && <div className="px-2.5 pt-5 pb-1.5 text-[10px] uppercase tracking-[0.13em] font-semibold text-text-muted">Workspace</div>}
-        {collapsed && <div className="h-3" />}
-        <NavGroup items={insight} active={active} collapsed={collapsed} onNavigate={() => setMobileOpen(false)} />
+        {!collapsed && <div className="px-2.5 pt-6 pb-1.5 text-[10px] uppercase tracking-[0.13em] font-semibold text-text-muted">More</div>}
+        {collapsed && <div className="h-4" />}
+        <NavGroup items={more} active={active} collapsed={collapsed} onNavigate={() => setMobileOpen(false)} />
       </div>
 
       <div className="p-3 border-t border-border">
@@ -140,7 +132,7 @@ export function ShellClient({
         </header>
 
         <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <div className="max-w-[1500px] mx-auto">{children}</div>
+          <div className="max-w-[1400px] mx-auto">{children}</div>
         </main>
       </div>
     </div>
@@ -158,7 +150,7 @@ function NavGroup({ items, active, collapsed, onNavigate }: { items: NavItem[]; 
             href={item.href}
             onClick={onNavigate}
             title={collapsed ? item.label : undefined}
-            className={`group flex items-center ${collapsed ? "justify-center px-2" : "gap-2.5 px-2.5"} min-h-9 rounded-xl text-sm transition-colors ${
+            className={`group flex items-center ${collapsed ? "justify-center px-2" : "gap-2.5 px-2.5"} min-h-10 rounded-xl text-sm transition-colors ${
               selected ? "bg-accent-soft text-accent-text font-semibold" : "text-text-secondary hover:bg-surface-sunk/70 hover:text-text-primary"
             }`}
           >
