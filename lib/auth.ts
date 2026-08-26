@@ -27,13 +27,17 @@ export async function getAynaClerkUser() {
 
   if (!isAynaEmail(email)) redirect("/not-authorized");
 
-  return { userId, clerkUser, email };
+  return { userId, clerkUser, email: email.trim().toLowerCase() };
 }
 
 /**
  * Resolves the signed-in account to the internal Ayna users row.
  * The @aynahealth.co domain check runs every time this helper is used.
  * Internal deactivation remains an additional lock.
+ *
+ * First login can trigger several server-rendered requests at once. User
+ * creation therefore uses ON CONFLICT DO NOTHING and then re-reads the row so
+ * concurrent requests cannot crash on the unique Clerk user/email indexes.
  */
 export async function getOrCreateCurrentUser() {
   const {
@@ -73,6 +77,7 @@ export async function getOrCreateCurrentUser() {
       image: clerkUser?.imageUrl ?? existingByEmail.image,
       updatedAt: new Date(),
     }).where(eq(users.id, existingByEmail.id));
+
     return db.query.users.findFirst({ where: eq(users.id, existingByEmail.id) });
   }
 
@@ -80,15 +85,9 @@ export async function getOrCreateCurrentUser() {
   const isFirstUser = !workspace;
   if (!workspace) {
     const id = nanoid();
-    await db.insert(workspaces).values({ id, name: "Ayna" });
-    workspace = {
-      id,
-      name: "Ayna",
-      timezone: "America/New_York",
-      defaultDueTime: "17:00",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    await db.insert(workspaces).values({ id, name: "Ayna" }).onConflictDoNothing();
+    workspace = (await db.query.workspaces.findMany({ limit: 1 }))[0];
+    if (!workspace) throw new Error("Unable to initialize Ayna workspace");
   }
 
   const id = nanoid();
@@ -100,9 +99,36 @@ export async function getOrCreateCurrentUser() {
     name,
     image: clerkUser?.imageUrl,
     role: isFirstUser ? "admin" : "member",
-  });
+  }).onConflictDoNothing();
 
-  return db.query.users.findFirst({ where: eq(users.id, id) });
+  // Another request may have created this exact user between the checks above
+  // and the insert. Always resolve the canonical row after the insert attempt.
+  const resolvedByProvider = await db.query.users.findFirst({
+    where: eq(users.authProviderId, authProviderId),
+  });
+  if (resolvedByProvider) {
+    if (!resolvedByProvider.active) redirect("/not-authorized");
+    return resolvedByProvider;
+  }
+
+  const resolvedByEmail = await db.query.users.findFirst({ where: eq(users.email, email) });
+  if (resolvedByEmail) {
+    if (!resolvedByEmail.active) redirect("/not-authorized");
+
+    // Covers a rare concurrent email-linking race without creating a duplicate.
+    if (resolvedByEmail.authProviderId !== authProviderId) {
+      await db.update(users).set({
+        authProviderId,
+        name: name || resolvedByEmail.name,
+        image: clerkUser?.imageUrl ?? resolvedByEmail.image,
+        updatedAt: new Date(),
+      }).where(eq(users.id, resolvedByEmail.id));
+    }
+
+    return db.query.users.findFirst({ where: eq(users.id, resolvedByEmail.id) });
+  }
+
+  throw new Error("Unable to resolve Ayna user after sign in");
 }
 
 export async function requireAdmin() {
