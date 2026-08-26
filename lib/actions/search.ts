@@ -2,18 +2,19 @@
 
 import { db } from "@/db";
 import { projects, tasks, users } from "@/db/schema";
+import { trackers } from "@/db/tracker-schema";
 import { getOrCreateCurrentUser } from "@/lib/auth";
 import { and, eq, ilike, isNull, or } from "drizzle-orm";
 
 export async function searchWorkspace(rawQuery: string) {
   const user = await getOrCreateCurrentUser();
-  if (!user) return { tasks: [], projects: [], people: [] };
+  if (!user) return { tasks: [], trackers: [], projects: [], people: [] };
 
   const query = rawQuery.trim();
-  if (query.length < 2) return { tasks: [], projects: [], people: [] };
+  if (query.length < 2) return { tasks: [], trackers: [], projects: [], people: [] };
   const pattern = `%${query.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
 
-  const [taskRows, projectRows, peopleRows] = await Promise.all([
+  const [taskRows, trackerRows, projectRows, peopleRows] = await Promise.all([
     db.query.tasks.findMany({
       where: and(
         eq(tasks.workspaceId, user.workspaceId),
@@ -23,6 +24,15 @@ export async function searchWorkspace(rawQuery: string) {
       with: { project: true, owner: true },
       orderBy: [tasks.title],
       limit: 12,
+    }),
+    db.query.trackers.findMany({
+      where: and(
+        eq(trackers.workspaceId, user.workspaceId),
+        isNull(trackers.archivedAt),
+        or(ilike(trackers.name, pattern), ilike(trackers.description, pattern)),
+      ),
+      orderBy: [trackers.name],
+      limit: 8,
     }),
     db.query.projects.findMany({
       where: and(
@@ -54,6 +64,7 @@ export async function searchWorkspace(rawQuery: string) {
       owner: task.owner?.name ?? null,
       dueAt: task.dueAt?.toISOString() ?? null,
     })),
+    trackers: trackerRows.map((tracker) => ({ id: tracker.id, name: tracker.name, itemLabel: tracker.itemLabel })),
     projects: projectRows.map((project) => ({ id: project.id, name: project.name, status: project.status, health: project.health })),
     people: peopleRows.map((person) => ({ id: person.id, name: person.name, email: person.email, role: person.role })),
   };
