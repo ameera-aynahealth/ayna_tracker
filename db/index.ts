@@ -2,12 +2,19 @@ import "server-only";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
+import * as extraRelations from "./relations";
+
+// Drizzle needs both sides of every relation in the schema object used to
+// initialize the relational query builder. Keep the table schema and the
+// supplemental reverse relations together here so `db.query.*` can infer
+// joins such as projects -> milestones and tasks -> attachments/activity.
+const relationalSchema = { ...schema, ...extraRelations };
 
 // Do not require DATABASE_URL just to import this module. Next.js imports API
 // route modules while collecting build metadata, and those imports should not
 // need a live database connection. The first real database operation still
 // fails clearly if DATABASE_URL is missing.
-type Database = ReturnType<typeof drizzle<typeof schema>>;
+type Database = ReturnType<typeof drizzle<typeof relationalSchema>>;
 
 type DbGlobals = {
   queryClient?: postgres.Sql;
@@ -27,7 +34,7 @@ function getDatabase(): Database {
   }
 
   const queryClient = globalForDb.queryClient ?? postgres(databaseUrl, { max: 5 });
-  const database = drizzle(queryClient, { schema });
+  const database = drizzle(queryClient, { schema: relationalSchema });
 
   // Reuse the connection/database across hot reloads in development. Vercel
   // serverless functions get a fresh instance per cold start; Neon handles the
