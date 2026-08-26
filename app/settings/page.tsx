@@ -1,12 +1,16 @@
 import { getOrCreateCurrentUser } from "@/lib/auth";
-import { getActiveUsers, getDataHealthSnapshot } from "@/lib/queries";
+import { getDataHealthSnapshot } from "@/lib/queries";
+import { db } from "@/db";
 import { AppShell } from "@/components/app-shell";
 import { SettingsPanel } from "@/components/settings-panel";
 
 export default async function SettingsPage() {
   const user = await getOrCreateCurrentUser();
   if (!user) return null;
-  const [people, dataHealth] = await Promise.all([getActiveUsers(), getDataHealthSnapshot()]);
+  const [people, dataHealth] = await Promise.all([
+    db.query.users.findMany({ orderBy: (users, { asc }) => [asc(users.name)] }),
+    getDataHealthSnapshot(),
+  ]);
 
   const projectUser = (person: typeof user) => ({
     id: person.id,
