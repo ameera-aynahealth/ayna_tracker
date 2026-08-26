@@ -7,12 +7,9 @@ import { redirect } from "next/navigation";
 
 /**
  * Ayna Tracker is private to the Ayna team.
- * Access is granted only when the signed-in Clerk account's email ends in
- * @aynahealth.co. Any other email is denied, regardless of Clerk session state.
+ * Access is granted only when the signed-in account email ends in
+ * @aynahealth.co. No Clerk organization membership or invitation is required.
  */
-export const AYNA_CLERK_ORG_ID =
-  process.env.CLERK_ORGANIZATION_ID ?? "org_3IRENjCjH7Ag660gEUrxgk1xZ4O";
-
 export const AYNA_EMAIL_DOMAIN = "@aynahealth.co";
 
 export function isAynaEmail(email: string) {
@@ -34,7 +31,7 @@ export async function getAynaClerkUser() {
 }
 
 /**
- * Resolves the signed-in Clerk user to the internal Ayna users row.
+ * Resolves the signed-in account to the internal Ayna users row.
  * The @aynahealth.co domain check runs every time this helper is used.
  * Internal deactivation remains an additional lock.
  */
