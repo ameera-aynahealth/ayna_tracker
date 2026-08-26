@@ -12,10 +12,10 @@ export default function Page() {
           </p>
         </div>
         <div className="flex justify-center">
-          <SignIn />
+          <SignIn signUpUrl="/sign-up" />
         </div>
         <p className="text-xs text-text-muted text-center mt-5 leading-5">
-          Access is limited to active Ayna team members using an @aynahealth.co email address.
+          If this is your first time in the tracker, create your login with the same @aynahealth.co account. No organization invite is required.
         </p>
       </div>
     </main>
