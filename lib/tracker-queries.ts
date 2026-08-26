@@ -1,6 +1,7 @@
 import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { trackerItems, trackers } from "@/db/tracker-schema";
+import { ensureTrackerSchema } from "@/lib/ensure-trackers";
 
 export type TrackerStage = { key: string; label: string };
 
@@ -18,6 +19,7 @@ export function parseTrackerStages(value: string): TrackerStage[] {
 }
 
 export async function getTrackersWithCounts() {
+  await ensureTrackerSchema();
   const [allTrackers, allItems] = await Promise.all([
     db.query.trackers.findMany({
       where: isNull(trackers.archivedAt),
@@ -41,6 +43,7 @@ export async function getTrackersWithCounts() {
 }
 
 export async function getArchivedTrackers() {
+  await ensureTrackerSchema();
   return db.query.trackers.findMany({
     where: isNotNull(trackers.archivedAt),
     orderBy: [asc(trackers.name)],
@@ -48,6 +51,7 @@ export async function getArchivedTrackers() {
 }
 
 export async function getTrackerWithItems(trackerId: string) {
+  await ensureTrackerSchema();
   const tracker = await db.query.trackers.findFirst({
     where: and(eq(trackers.id, trackerId), isNull(trackers.archivedAt)),
   });
