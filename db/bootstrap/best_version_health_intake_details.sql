@@ -1,6 +1,32 @@
 -- Exact health-intake requirements supplied by Ameera.
 -- Idempotent updates to the existing beta task list; no new unrelated tasks.
 
+-- Health intake is the #1 active beta priority. Keep the main redesign first,
+-- then the section-by-section implementation immediately behind it.
+UPDATE tasks
+SET priority = 'urgent',
+    due_at = TIMESTAMPTZ '2026-09-03 17:00:00-04',
+    original_due_at = TIMESTAMPTZ '2026-09-03 17:00:00-04',
+    updated_at = NOW()
+WHERE id = 'bvu-beta-20260903-042';
+
+UPDATE tasks
+SET priority = 'urgent',
+    due_at = CASE
+      WHEN id IN ('bvu-beta-20260903-043', 'bvu-beta-20260903-044') THEN TIMESTAMPTZ '2026-09-04 17:00:00-04'
+      WHEN id IN ('bvu-beta-20260903-045', 'bvu-beta-20260903-046', 'bvu-beta-20260903-047') THEN TIMESTAMPTZ '2026-09-05 17:00:00-04'
+      WHEN id IN ('bvu-beta-20260903-048', 'bvu-beta-20260903-049', 'bvu-beta-20260903-050') THEN TIMESTAMPTZ '2026-09-06 17:00:00-04'
+      ELSE TIMESTAMPTZ '2026-09-07 17:00:00-04'
+    END,
+    original_due_at = CASE
+      WHEN id IN ('bvu-beta-20260903-043', 'bvu-beta-20260903-044') THEN TIMESTAMPTZ '2026-09-04 17:00:00-04'
+      WHEN id IN ('bvu-beta-20260903-045', 'bvu-beta-20260903-046', 'bvu-beta-20260903-047') THEN TIMESTAMPTZ '2026-09-05 17:00:00-04'
+      WHEN id IN ('bvu-beta-20260903-048', 'bvu-beta-20260903-049', 'bvu-beta-20260903-050') THEN TIMESTAMPTZ '2026-09-06 17:00:00-04'
+      ELSE TIMESTAMPTZ '2026-09-07 17:00:00-04'
+    END,
+    updated_at = NOW()
+WHERE id BETWEEN 'bvu-beta-20260903-043' AND 'bvu-beta-20260903-053';
+
 UPDATE tasks
 SET description = 'Replace the older intake with the final 7-section branching intake exactly as specified: 1) Core Profile, 2) Goals, 3) Relevant Symptoms, 4) Health + Safety, 5) Tried Before, 6) Shopping Preferences, 7) Results. Health Match must remain separate from Shopping Preferences.'
 WHERE id = 'bvu-beta-20260903-042';
