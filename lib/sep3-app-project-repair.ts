@@ -50,18 +50,15 @@ async function runRepair() {
     if (!workspaceId) return;
 
     const projectRows = await sql`
-      SELECT id, name
+      SELECT id
       FROM projects
       WHERE workspace_id = ${workspaceId}
         AND archived_at IS NULL
         AND status NOT IN ('completed'::project_status, 'cancelled'::project_status)
-      ORDER BY updated_at DESC
+        AND LOWER(name) = 'app updates'
+      LIMIT 1
     `;
-
-    const appProject = projectRows.find((row) => {
-      const name = String(row.name).toLowerCase();
-      return /\bapp\b/.test(name) && !name.includes("tracker");
-    });
+    const appProject = projectRows[0];
     if (!appProject) return;
 
     await sql`
