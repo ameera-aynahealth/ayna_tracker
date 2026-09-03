@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { CalendarDays, CircleAlert, UserRound } from "lucide-react";
 import { getOrCreateCurrentUser } from "@/lib/auth";
 import { ensureBestVersionMasterList } from "@/lib/best-version-bootstrap";
+import { ensureRecentMeetingEventTasks } from "@/lib/recent-meeting-event-bootstrap";
 import { getActiveUsers, getProjectWithTasks } from "@/lib/queries";
 import { AppShell } from "@/components/app-shell";
 import { ProjectTaskWorkspace } from "@/components/project-task-workspace";
@@ -15,6 +16,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   if (!user) return null;
 
   await ensureBestVersionMasterList(id);
+  await ensureRecentMeetingEventTasks(id);
 
   const [data, people] = await Promise.all([getProjectWithTasks(id), getActiveUsers()]);
   if (!data) notFound();
