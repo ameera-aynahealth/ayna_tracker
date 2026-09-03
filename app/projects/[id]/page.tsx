@@ -3,6 +3,7 @@ import { CalendarDays, CircleAlert, UserRound } from "lucide-react";
 import { getOrCreateCurrentUser } from "@/lib/auth";
 import { ensureBestVersionMasterList } from "@/lib/best-version-bootstrap";
 import { ensureRecentMeetingEventTasks } from "@/lib/recent-meeting-event-bootstrap";
+import { ensureGrantApplicationTasks } from "@/lib/grant-applications-bootstrap";
 import { getActiveUsers, getMyWorkBuckets, getProjectWithTasks } from "@/lib/queries";
 import { AppShell } from "@/components/app-shell";
 import { ProjectTaskWorkspace } from "@/components/project-task-workspace";
@@ -17,6 +18,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   await ensureBestVersionMasterList(id);
   await ensureRecentMeetingEventTasks(id);
+  await ensureGrantApplicationTasks();
 
   const [data, people, myWork] = await Promise.all([
     getProjectWithTasks(id),
@@ -80,35 +82,49 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         <MetricCard label="Blocked" value={blocked} tone="plum" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-8">
-        <Card title="Progress" subtitle="Overall project completion." className="lg:col-span-4">
-          <div className="flex justify-center py-1"><ProgressRing value={progress} label={`${done} completed`} size={132} /></div>
-        </Card>
-        <Card title="Work distribution" subtitle="Where the remaining work currently sits." className="lg:col-span-5">
-          <StackedDistribution data={statusData} />
-        </Card>
-        <Card title="Milestones" subtitle="Important project dates." className="lg:col-span-3">
-          <div className="space-y-3">
-            {project.milestones.slice(0, 5).map((milestone) => (
-              <div key={milestone.id} className="flex items-start gap-3">
-                <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${milestone.completed ? "bg-sage" : "bg-accent"}`} />
-                <div className="min-w-0">
-                  <div className="text-sm font-medium break-words">{milestone.title}</div>
-                  <div className="text-[11px] text-text-muted mt-0.5">{milestone.dueDate ? milestone.dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "No date"}</div>
-                </div>
-              </div>
-            ))}
-            {project.milestones.length === 0 && <p className="text-sm text-text-muted">No milestones yet.</p>}
+      <div className="grid xl:grid-cols-[1.1fr_0.9fr] gap-4 mb-6">
+        <Card title="Progress" subtitle="Overall project completion.">
+          <div className="flex items-center gap-5">
+            <ProgressRing value={progress} size={78} label="complete" />
+            <div>
+              <div className="text-2xl font-semibold">{progress}%</div>
+              <div className="text-sm text-text-secondary mt-1">{done} completed</div>
+            </div>
           </div>
+        </Card>
+        <Card title="Work distribution" subtitle="Where the remaining work currently sits.">
+          <StackedDistribution data={statusData} />
         </Card>
       </div>
 
-      <ProjectTaskWorkspace
-        tasks={serialized}
-        myTaskIds={[...myTaskIds]}
-        people={people.map((person) => ({ id: person.id, name: person.name }))}
-        project={{ id: project.id, name: project.name }}
-      />
+      <Card title="Milestones" subtitle="Important project dates." className="mb-6">
+        {project.milestones?.length ? (
+          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {project.milestones.map((milestone) => (
+              <div key={milestone.id} className="rounded-xl border border-border bg-page/40 p-3">
+                <div className="text-sm font-medium">{milestone.title}</div>
+                <div className="text-xs text-text-muted mt-1">
+                  {milestone.dueDate ? milestone.dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "No date"}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-text-muted">No milestones yet.</div>
+        )}
+      </Card>
+
+      <section>
+        <div className="mb-3">
+          <h2 className="font-voice text-xl font-semibold">Project tasks</h2>
+          <p className="text-xs text-text-muted mt-0.5">{tasks.length} tasks across the whole team.</p>
+        </div>
+        <ProjectTaskWorkspace
+          tasks={serialized}
+          people={people.map((person) => ({ id: person.id, name: person.name }))}
+          myTaskIds={[...myTaskIds]}
+        />
+      </section>
     </AppShell>
   );
 }
