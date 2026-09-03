@@ -1,3 +1,4 @@
+import { processOneHourDeadlineEmails } from "@/lib/one-hour-reminders";
 import { processReminderCycle } from "@/lib/reminders";
 
 export const runtime = "nodejs";
@@ -13,12 +14,16 @@ export async function GET(request: Request) {
 
   try {
     const startedAt = Date.now();
-    const result = await processReminderCycle();
+    const [result, oneHourResult] = await Promise.all([
+      processReminderCycle(),
+      processOneHourDeadlineEmails(),
+    ]);
     console.info("[cron:reminders]", {
       ...result,
+      ...oneHourResult,
       durationMs: Date.now() - startedAt,
     });
-    return Response.json({ success: true, ...result });
+    return Response.json({ success: true, ...result, ...oneHourResult });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown reminder error";
     console.error("[cron:reminders:error]", message);
