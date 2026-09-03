@@ -240,7 +240,8 @@ export const tasks = pgTable(
   })
 );
 
-// Task <-> collaborators (many-to-many)
+// Task <-> assignees (ownerId remains the primary assignee for compatibility;
+// additional assignees live here).
 export const taskCollaborators = pgTable(
   "task_collaborators",
   {
@@ -248,6 +249,21 @@ export const taskCollaborators = pgTable(
     userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   },
   (t) => ({ pk: primaryKey({ columns: [t.taskId, t.userId] }) })
+);
+
+// Task <-> reviewers (many-to-many). reviewerId on tasks is retained as the
+// first reviewer for backwards compatibility with older views and reminders.
+export const taskReviewers = pgTable(
+  "task_reviewers",
+  {
+    taskId: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.taskId, t.userId] }),
+    userIdx: index("task_reviewers_user_idx").on(t.userId),
+  })
 );
 
 // Subtasks / checklist items
@@ -427,6 +443,7 @@ export const tasksRelations = relations(tasks, ({ many, one }) => ({
   subtasks: many(subtasks),
   comments: many(comments),
   collaborators: many(taskCollaborators),
+  reviewers: many(taskReviewers),
   tags: many(taskTags),
   attachments: many(attachments),
   activity: many(activityLogs),
