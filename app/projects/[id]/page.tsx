@@ -123,6 +123,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           tasks={serialized}
           people={people.map((person) => ({ id: person.id, name: person.name }))}
           myTaskIds={[...myTaskIds]}
+          project={{ id: project.id, name: project.name }}
         />
       </section>
     </AppShell>
