@@ -115,6 +115,7 @@ export async function processOneHourDeadlineEmails(now = new Date()) {
             intro: task.title,
             imageUrl: ONE_HOUR_GIF,
             imageAlt: "Deadline reminder",
+            imagePosition: "bottom",
             sections,
             ctaLabel: "Open task + check it off",
             ctaUrl: appUrl(`/tasks/${task.id}`),
