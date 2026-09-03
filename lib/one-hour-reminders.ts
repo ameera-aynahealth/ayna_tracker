@@ -80,16 +80,19 @@ export async function processOneHourDeadlineEmails(now = new Date()) {
       if (!claimed[0]) continue;
 
       const dueLabel = formatInTimeZone(task.dueAt, timezone, "EEE, MMM d 'at' h:mm a zzz");
-      const otherToday = assigned
-        .filter((item) => item.id !== task.id && item.dueAt && formatInTimeZone(item.dueAt, timezone, "yyyy-MM-dd") === todayKey)
-        .sort((a, b) => (a.dueAt?.getTime() ?? 0) - (b.dueAt?.getTime() ?? 0))
-        .slice(0, 8)
-        .map((item) => taskLabel(item, timezone));
-      const dueTomorrow = assigned
+      const overdueTasks = assigned
+        .filter((item) => item.id !== task.id && item.dueAt && item.dueAt.getTime() < now.getTime())
+        .sort((a, b) => (a.dueAt?.getTime() ?? 0) - (b.dueAt?.getTime() ?? 0));
+      const otherTodayTasks = assigned
+        .filter((item) => item.id !== task.id && item.dueAt && item.dueAt.getTime() >= now.getTime() && formatInTimeZone(item.dueAt, timezone, "yyyy-MM-dd") === todayKey)
+        .sort((a, b) => (a.dueAt?.getTime() ?? 0) - (b.dueAt?.getTime() ?? 0));
+      const dueTomorrowTasks = assigned
         .filter((item) => item.id !== task.id && item.dueAt && formatInTimeZone(item.dueAt, timezone, "yyyy-MM-dd") === tomorrowKey)
-        .sort((a, b) => (a.dueAt?.getTime() ?? 0) - (b.dueAt?.getTime() ?? 0))
-        .slice(0, 8)
-        .map((item) => taskLabel(item, timezone));
+        .sort((a, b) => (a.dueAt?.getTime() ?? 0) - (b.dueAt?.getTime() ?? 0));
+
+      const overdue = overdueTasks.slice(0, 8).map((item) => taskLabel(item, timezone));
+      const otherToday = otherTodayTasks.slice(0, 8).map((item) => taskLabel(item, timezone));
+      const dueTomorrow = dueTomorrowTasks.slice(0, 8).map((item) => taskLabel(item, timezone));
 
       const sections = [
         {
@@ -101,6 +104,7 @@ export async function processOneHourDeadlineEmails(now = new Date()) {
             "Already did it? Check it off in the tracker so we stop yelling at you.",
           ],
         },
+        ...(overdue.length ? [{ title: "Overdue", items: overdue }] : []),
         ...(otherToday.length ? [{ title: "Also due later today", items: otherToday }] : []),
         ...(dueTomorrow.length ? [{ title: "Due tomorrow", items: dueTomorrow }] : []),
       ];
@@ -113,6 +117,11 @@ export async function processOneHourDeadlineEmails(now = new Date()) {
             eyebrow: "One-hour warning",
             title: "HEY BADDIE YOU HAVE THIS DUE IN AN HOUR",
             intro: task.title,
+            visualStats: [
+              { label: "Overdue", value: overdueTasks.length },
+              { label: "Due today", value: otherTodayTasks.length + 1 },
+              { label: "Due tomorrow", value: dueTomorrowTasks.length },
+            ],
             imageUrl: ONE_HOUR_GIF,
             imageAlt: "Deadline reminder",
             imagePosition: "bottom",
