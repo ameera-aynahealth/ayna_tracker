@@ -232,7 +232,10 @@ export async function processReminderCycle(now = new Date()): Promise<ReminderSu
       const firstName = (user.name.trim().split(/\s+/)[0] || "BADDIE").toUpperCase();
       const dueTodayCount = buckets.dueToday.length;
       const remainingCount = buckets.all.length;
-      const wakeTitle = `WAKE UP ${firstName} U HAVE SHIT TO GET DONEEE HERES THE BREAKDOWN BADDIE`;
+      const wakeTitle = `WAKE UP ${firstName} U HAVE SHIT TO GET DONE HERE'S THE BREAKDOWN BADDIE`;
+      const todayItems = buckets.dueToday.length
+        ? buckets.dueToday.slice(0, 12).map(taskLabel)
+        : ["Nothing due today. Use the opening to knock out something overdue or get ahead."];
 
       await deliver({
         dedupeKey: `daily:${user.id}:${localDay}`,
@@ -240,17 +243,25 @@ export async function processReminderCycle(now = new Date()): Promise<ReminderSu
         type: "daily_digest",
         title: wakeTitle,
         body: `${dueTodayCount} due today. ${remainingCount} total tasks left.`,
-        subject: `WAKE UP ${firstName} — ${dueTodayCount} DUE TODAY / ${remainingCount} LEFT`,
+        subject: "Daily ayna briefing",
         createInApp: false,
         html: emailLayout({
-          eyebrow: "9 AM ayna wake-up",
+          eyebrow: "9 AM ayna briefing",
           title: wakeTitle,
-          intro: `${dueTodayCount} ${dueTodayCount === 1 ? "task" : "tasks"} due today. ${remainingCount} total ${remainingCount === 1 ? "task" : "tasks"} left on your plate.`,
+          intro: `${remainingCount} total ${remainingCount === 1 ? "task" : "tasks"} left on your plate. Here is what matters first.`,
+          topSection: {
+            title: `Due today · ${dueTodayCount}`,
+            items: todayItems,
+          },
+          visualStats: [
+            { label: "Due today", value: dueTodayCount },
+            { label: "Overdue", value: buckets.overdue.length },
+            { label: "Coming up this week", value: buckets.dueTomorrow.length + buckets.thisWeek.length },
+            { label: "Blocked / waiting", value: buckets.blocked.length + buckets.waiting.length },
+          ],
           imageUrl: MORNING_GIF,
           imageAlt: "Morning motivation",
           sections: [
-            { title: "The numbers", items: [`Due today: ${dueTodayCount}`, `Total tasks left: ${remainingCount}`, `Overdue: ${buckets.overdue.length}`, `Needs review: ${buckets.needsReview.length}`] },
-            { title: "Due today", items: buckets.dueToday.slice(0, 12).map(taskLabel) },
             { title: "Overdue", items: buckets.overdue.slice(0, 10).map(taskLabel) },
             { title: "Due tomorrow", items: buckets.dueTomorrow.slice(0, 8).map(taskLabel) },
             { title: "Coming up this week", items: buckets.thisWeek.slice(0, 10).map(taskLabel) },
