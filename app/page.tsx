@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { getOrCreateCurrentUser } from "@/lib/auth";
 import { ensureSep3MeetingTasks } from "@/lib/sep3-meeting-task-bootstrap";
+import { ensureSep3AppTaskProjectMapping } from "@/lib/sep3-app-project-repair";
 import { getHomeSummary, getProjectsWithProgress, getTopPriorities } from "@/lib/queries";
 import { AppShell } from "@/components/app-shell";
 import { TaskRow } from "@/components/task-row";
@@ -11,6 +12,7 @@ export default async function HomePage() {
   if (!user) return null;
 
   await ensureSep3MeetingTasks();
+  await ensureSep3AppTaskProjectMapping();
 
   const [summary, priorities, projects] = await Promise.all([
     getHomeSummary(user.id),
@@ -40,7 +42,10 @@ export default async function HomePage() {
               <h2 className="font-voice text-xl font-semibold">Your day</h2>
               <p className="text-xs text-text-muted mt-0.5">The few things most worth moving next.</p>
             </div>
-            <Link href="/tasks" className="text-xs font-semibold text-accent-text inline-flex items-center gap-1">All tasks <ArrowRight size={12} /></Link>
+            <div className="flex items-center gap-3">
+              <Link href="/tasks" className="text-xs font-semibold text-accent-text">My tasks</Link>
+              <Link href="/tasks" className="text-xs font-semibold text-text-secondary inline-flex items-center gap-1">Everyone's tasks <ArrowRight size={12} /></Link>
+            </div>
           </div>
           <div className="border border-border bg-surface divide-y divide-border overflow-hidden rounded-2xl">
             {priorities.map((task) => <TaskRow key={task.id} task={task} />)}
