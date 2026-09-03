@@ -8,12 +8,14 @@ import {
   savedViews,
   subtasks,
   taskCollaborators,
+  taskReviewers,
   tasks,
   users,
   workstreams,
 } from "@/db/schema";
 import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { startOfTodayUTC, OPEN_STATUS_LIST } from "@/lib/date-utils";
+import { ensureTaskPeopleSchema } from "@/lib/ensure-task-people";
 
 export { startOfTodayUTC };
 
@@ -52,13 +54,14 @@ export async function getActiveWorkstreams() {
 
 // ---------------------------------------------------------------------------
 // My Work is the source of truth for personal workload. It includes primary
-// ownership, review responsibility, and collaboration so tasks do not vanish
-// from someone's daily view simply because they are not the primary owner.
+// ownership, additional assignment, review responsibility, and collaboration.
 // ---------------------------------------------------------------------------
 export async function getMyWorkBuckets(userId: string) {
-  const [member, collaborationRows] = await Promise.all([
+  await ensureTaskPeopleSchema();
+  const [member, collaborationRows, reviewerRows] = await Promise.all([
     db.query.users.findFirst({ where: eq(users.id, userId) }),
     db.select({ taskId: taskCollaborators.taskId }).from(taskCollaborators).where(eq(taskCollaborators.userId, userId)),
+    db.select({ taskId: taskReviewers.taskId }).from(taskReviewers).where(eq(taskReviewers.userId, userId)),
   ]);
 
   const today = startOfTodayUTC(member?.timezone ?? "America/New_York");
@@ -66,9 +69,11 @@ export async function getMyWorkBuckets(userId: string) {
   const dayAfterTomorrow = new Date(today.getTime() + 2 * 86400000);
   const sevenDays = new Date(today.getTime() + 7 * 86400000);
   const collaboratorIds = collaborationRows.map((row) => row.taskId);
+  const reviewerTaskIds = reviewerRows.map((row) => row.taskId);
+  const relatedIds = [...new Set([...collaboratorIds, ...reviewerTaskIds])];
 
-  const ownership = collaboratorIds.length > 0
-    ? or(eq(tasks.ownerId, userId), eq(tasks.reviewerId, userId), inArray(tasks.id, collaboratorIds))
+  const ownership = relatedIds.length > 0
+    ? or(eq(tasks.ownerId, userId), eq(tasks.reviewerId, userId), inArray(tasks.id, relatedIds))
     : or(eq(tasks.ownerId, userId), eq(tasks.reviewerId, userId));
 
   const rows = await db.query.tasks.findMany({
@@ -77,13 +82,16 @@ export async function getMyWorkBuckets(userId: string) {
     orderBy: [tasks.dueAt, desc(tasks.updatedAt)],
   });
 
+  const reviewerTaskIdSet = new Set(reviewerTaskIds);
   const overdue = rows.filter((task) => task.dueAt && task.dueAt < today && task.status !== "waiting" && task.status !== "blocked");
   const dueToday = rows.filter((task) => task.dueAt && task.dueAt >= today && task.dueAt < tomorrow);
   const dueTomorrow = rows.filter((task) => task.dueAt && task.dueAt >= tomorrow && task.dueAt < dayAfterTomorrow);
   const thisWeek = rows.filter((task) => task.dueAt && task.dueAt >= dayAfterTomorrow && task.dueAt < sevenDays);
   const waiting = rows.filter((task) => task.status === "waiting");
   const blocked = rows.filter((task) => task.status === "blocked");
-  const needsReview = rows.filter((task) => task.status === "needs_review" || (task.reviewerId === userId && task.reviewRequired));
+  const needsReview = rows.filter((task) =>
+    task.status === "needs_review" && (task.reviewerId === userId || reviewerTaskIdSet.has(task.id))
+  );
   const noDueDate = rows.filter((task) => !task.dueAt && !["waiting", "blocked", "needs_review"].includes(task.status));
 
   return { overdue, dueToday, dueTomorrow, thisWeek, waiting, blocked, needsReview, noDueDate, all: rows };
@@ -191,6 +199,7 @@ export async function getProjectWithTasks(projectId: string) {
 }
 
 export async function getTaskDetail(taskId: string) {
+  await ensureTaskPeopleSchema();
   return db.query.tasks.findFirst({
     where: eq(tasks.id, taskId),
     with: {
@@ -198,6 +207,8 @@ export async function getTaskDetail(taskId: string) {
       owner: true,
       createdBy: true,
       reviewer: true,
+      collaborators: { with: { user: true } },
+      reviewers: { with: { user: true } },
       subtasks: { orderBy: [subtasks.sortOrder] },
       comments: { with: { user: true }, orderBy: [comments.createdAt] },
       activity: { with: { user: true }, orderBy: [desc(activityLogs.createdAt)], limit: 50 },
@@ -235,18 +246,22 @@ export async function getArchive() {
 }
 
 export async function getTeamWorkload() {
-  const [members, openTasks] = await Promise.all([
+  const [members, openTasks, collaboratorRows] = await Promise.all([
     getActiveUsers(),
     db.query.tasks.findMany({ where: and(isNull(tasks.archivedAt), isOpenStatusSql()) }),
+    db.select({ taskId: taskCollaborators.taskId, userId: taskCollaborators.userId }).from(taskCollaborators),
   ]);
   const today = startOfTodayUTC();
   return members.map((member) => {
-    const owned = openTasks.filter((task) => task.ownerId === member.id);
-    const overdue = owned.filter((task) => task.dueAt && task.dueAt < today).length;
-    const blocked = owned.filter((task) => task.status === "blocked").length;
-    const highPriority = owned.filter((task) => task.priority === "urgent" || task.priority === "high").length;
-    const effortMinutes = owned.reduce((sum, task) => sum + (task.estimatedMinutes ?? 60), 0);
-    return { user: member, active: owned.length, overdue, blocked, highPriority, effortMinutes };
+    const collaboratorTaskIds = new Set(
+      collaboratorRows.filter((row) => row.userId === member.id).map((row) => row.taskId)
+    );
+    const assigned = openTasks.filter((task) => task.ownerId === member.id || collaboratorTaskIds.has(task.id));
+    const overdue = assigned.filter((task) => task.dueAt && task.dueAt < today).length;
+    const blocked = assigned.filter((task) => task.status === "blocked").length;
+    const highPriority = assigned.filter((task) => task.priority === "urgent" || task.priority === "high").length;
+    const effortMinutes = assigned.reduce((sum, task) => sum + (task.estimatedMinutes ?? 60), 0);
+    return { user: member, active: assigned.length, overdue, blocked, highPriority, effortMinutes };
   });
 }
 
@@ -290,12 +305,13 @@ export async function getSavedViews(userId: string) {
 }
 
 export async function getAnalyticsSnapshot() {
-  const [allTasks, allProjects, members, streams, failedDeliveries] = await Promise.all([
+  const [allTasks, allProjects, members, streams, failedDeliveries, collaboratorRows] = await Promise.all([
     db.query.tasks.findMany({ where: isNull(tasks.archivedAt), with: { owner: true, project: true } }),
     getProjectsWithProgress(),
     getActiveUsers(),
     getActiveWorkstreams(),
     db.query.notificationDeliveries.findMany({ where: eq(notificationDeliveries.success, false), limit: 100 }),
+    db.select({ taskId: taskCollaborators.taskId, userId: taskCollaborators.userId }).from(taskCollaborators),
   ]);
 
   const now = new Date();
@@ -317,7 +333,9 @@ export async function getAnalyticsSnapshot() {
   }));
   const ownerCounts = members.map((member) => ({
     label: member.name.split(" ")[0] || member.name,
-    value: open.filter((task) => task.ownerId === member.id).length,
+    value: open.filter((task) =>
+      task.ownerId === member.id || collaboratorRows.some((row) => row.taskId === task.id && row.userId === member.id)
+    ).length,
   }));
   const workstreamCounts = streams.map((stream) => ({
     label: stream.name,
