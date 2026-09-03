@@ -1,5 +1,7 @@
 import { getOrCreateCurrentUser } from "@/lib/auth";
-import { getCalendarTasks } from "@/lib/queries";
+import { ensureSep3MeetingTasks } from "@/lib/sep3-meeting-task-bootstrap";
+import { ensureSep3AppTaskProjectMapping } from "@/lib/sep3-app-project-repair";
+import { getCalendarTasks, getMyWorkBuckets } from "@/lib/queries";
 import { AppShell } from "@/components/app-shell";
 import { CalendarView } from "@/components/calendar-view";
 import { MetricCard } from "@/components/visuals";
@@ -7,7 +9,14 @@ import { MetricCard } from "@/components/visuals";
 export default async function CalendarPage() {
   const user = await getOrCreateCurrentUser();
   if (!user) return null;
-  const tasks = await getCalendarTasks(60);
+
+  await ensureSep3MeetingTasks();
+  await ensureSep3AppTaskProjectMapping();
+
+  const [tasks, mine] = await Promise.all([
+    getCalendarTasks(60),
+    getMyWorkBuckets(user.id),
+  ]);
   const now = new Date();
   const sevenDays = new Date(now.getTime() + 7 * 86400000);
   const fourteenDays = new Date(now.getTime() + 14 * 86400000);
@@ -31,7 +40,7 @@ export default async function CalendarPage() {
       <div className="mb-7">
         <p className="text-xs uppercase tracking-[0.12em] text-text-muted font-semibold mb-2">Deadline planning</p>
         <h1 className="font-voice text-3xl font-semibold">Calendar</h1>
-        <p className="text-sm text-text-secondary mt-1">See when work is stacking up before a deadline-heavy day becomes a problem.</p>
+        <p className="text-sm text-text-secondary mt-1">See when work is stacking up and switch between your deadlines and the whole team.</p>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
@@ -41,7 +50,7 @@ export default async function CalendarPage() {
         <MetricCard label="Blocked upcoming" value={blocked} tone="plum" />
       </div>
 
-      <CalendarView tasks={serialized} />
+      <CalendarView tasks={serialized} myTaskIds={mine.all.map((task) => task.id)} />
     </AppShell>
   );
 }
