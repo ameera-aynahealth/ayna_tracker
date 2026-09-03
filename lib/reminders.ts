@@ -30,6 +30,11 @@ type ReminderSummary = {
   emailsFailed: number;
 };
 
+type ReminderCycleOptions = {
+  forceDailyBriefing?: boolean;
+  manualDailyKey?: string;
+};
+
 const OPEN_STATUSES = OPEN_STATUS_LIST as unknown as Array<
   "backlog" | "not_started" | "in_progress" | "waiting" | "blocked" | "needs_review"
 >;
@@ -151,7 +156,7 @@ async function deliver(input: {
   }
 }
 
-export async function processReminderCycle(now = new Date()): Promise<ReminderSummary> {
+export async function processReminderCycle(now = new Date(), options: ReminderCycleOptions = {}): Promise<ReminderSummary> {
   const summary: ReminderSummary = {
     checked: 0,
     notificationsCreated: 0,
@@ -175,59 +180,60 @@ export async function processReminderCycle(now = new Date()): Promise<ReminderSu
     const localHour = Number(formatInTimeZone(now, timezone, "H"));
     const localDay = formatInTimeZone(now, timezone, "yyyy-MM-dd");
     const localWeekday = Number(formatInTimeZone(now, timezone, "i"));
+    const isManualDaily = options.forceDailyBriefing === true;
 
     // Existing task reminders keep a two-hour safety window. Dedupe keys make
     // sure an 8:00 and 9:00 cron run can never send the same reminder twice.
     const isMorningWindow = localHour >= 8 && localHour < 10;
-    if (!isMorningWindow) continue;
 
-    const owned = openTasks.filter((task) => task.ownerId === user.id);
+    if (isMorningWindow && !isManualDaily) {
+      const owned = openTasks.filter((task) => task.ownerId === user.id);
 
-    for (const task of owned) {
-      const reminderAt = task.status === "waiting" && task.followupAt ? task.followupAt : task.dueAt;
-      if (!reminderAt) continue;
+      for (const task of owned) {
+        const reminderAt = task.status === "waiting" && task.followupAt ? task.followupAt : task.dueAt;
+        if (!reminderAt) continue;
 
-      const dueDay = formatInTimeZone(reminderAt, timezone, "yyyy-MM-dd");
-      const daysUntil = dayNumber(dueDay) - dayNumber(localDay);
-      const descriptor = reminderDescriptor(daysUntil);
-      if (!descriptor) continue;
+        const dueDay = formatInTimeZone(reminderAt, timezone, "yyyy-MM-dd");
+        const daysUntil = dayNumber(dueDay) - dayNumber(localDay);
+        const descriptor = reminderDescriptor(daysUntil);
+        if (!descriptor) continue;
 
-      if (descriptor.type === "due_soon" && !user.notifyOnDueSoon) continue;
-      if (descriptor.type === "overdue" && !user.notifyOnOverdue) continue;
+        if (descriptor.type === "due_soon" && !user.notifyOnDueSoon) continue;
+        if (descriptor.type === "overdue" && !user.notifyOnOverdue) continue;
 
-      const isFollowUp = task.status === "waiting" && Boolean(task.followupAt);
-      const label = isFollowUp ? "Follow-up" : "Task";
-      const projectLabel = task.project?.name ? `Project: ${task.project.name}` : "No project";
-      const dueLabel = formatInTimeZone(reminderAt, timezone, "EEE, MMM d 'at' h:mm a zzz");
-      const targetVersion = reminderAt.toISOString();
+        const isFollowUp = task.status === "waiting" && Boolean(task.followupAt);
+        const label = isFollowUp ? "Follow-up" : "Task";
+        const projectLabel = task.project?.name ? `Project: ${task.project.name}` : "No project";
+        const dueLabel = formatInTimeZone(reminderAt, timezone, "EEE, MMM d 'at' h:mm a zzz");
+        const targetVersion = reminderAt.toISOString();
 
-      await deliver({
-        dedupeKey: `task:${task.id}:${user.id}:${descriptor.key}:${targetVersion}`,
-        user,
-        taskId: task.id,
-        type: descriptor.type,
-        title: `${label} ${descriptor.phrase}: ${task.title}`,
-        body: `${projectLabel}. ${dueLabel}.`,
-        subject: descriptor.type === "overdue"
-          ? `Overdue: ${task.title}`
-          : `${isFollowUp ? "Follow up" : "Due soon"}: ${task.title}`,
-        html: emailLayout({
-          eyebrow: descriptor.type === "overdue" ? "Needs attention" : isFollowUp ? "Follow-up reminder" : "Upcoming deadline",
-          title: task.title,
-          intro: `This ${label.toLowerCase()} is ${descriptor.phrase}.`,
-          sections: [
-            { title: "Details", items: [projectLabel, `Deadline: ${dueLabel}`, `Priority: ${task.priority.replaceAll("_", " ")}`] },
-          ],
-          ctaLabel: "Open task",
-          ctaUrl: appUrl(`/tasks/${task.id}`),
-        }),
-      }, summary);
+        await deliver({
+          dedupeKey: `task:${task.id}:${user.id}:${descriptor.key}:${targetVersion}`,
+          user,
+          taskId: task.id,
+          type: descriptor.type,
+          title: `${label} ${descriptor.phrase}: ${task.title}`,
+          body: `${projectLabel}. ${dueLabel}.`,
+          subject: descriptor.type === "overdue"
+            ? `Overdue: ${task.title}`
+            : `${isFollowUp ? "Follow up" : "Due soon"}: ${task.title}`,
+          html: emailLayout({
+            eyebrow: descriptor.type === "overdue" ? "Needs attention" : isFollowUp ? "Follow-up reminder" : "Upcoming deadline",
+            title: task.title,
+            intro: `This ${label.toLowerCase()} is ${descriptor.phrase}.`,
+            sections: [
+              { title: "Details", items: [projectLabel, `Deadline: ${dueLabel}`, `Priority: ${task.priority.replaceAll("_", " ")}`] },
+            ],
+            ctaLabel: "Open task",
+            ctaUrl: appUrl(`/tasks/${task.id}`),
+          }),
+        }, summary);
+      }
     }
 
     // Every active teammate gets one individualized wake-up brief at 9 AM in
-    // their tracker timezone. getMyWorkBuckets includes primary assignees,
-    // additional assignees, and review responsibility.
-    if (localHour === 9) {
+    // their tracker timezone. Manual sends use a separate one-time dedupe key.
+    if (localHour === 9 || isManualDaily) {
       const buckets = await getMyWorkBuckets(user.id);
       const firstName = (user.name.trim().split(/\s+/)[0] || "BADDIE").toUpperCase();
       const dueTodayCount = buckets.dueToday.length;
@@ -236,9 +242,12 @@ export async function processReminderCycle(now = new Date()): Promise<ReminderSu
       const todayItems = buckets.dueToday.length
         ? buckets.dueToday.slice(0, 12).map(taskLabel)
         : ["Nothing due today. Use the opening to knock out something overdue or get ahead."];
+      const dailyKey = isManualDaily
+        ? `daily-manual:${options.manualDailyKey ?? localDay}:${user.id}`
+        : `daily:${user.id}:${localDay}`;
 
       await deliver({
-        dedupeKey: `daily:${user.id}:${localDay}`,
+        dedupeKey: dailyKey,
         user,
         type: "daily_digest",
         title: wakeTitle,
@@ -276,7 +285,7 @@ export async function processReminderCycle(now = new Date()): Promise<ReminderSu
       }, summary);
     }
 
-    if (user.weeklyDigest && localWeekday === 1) {
+    if (!isManualDaily && isMorningWindow && user.weeklyDigest && localWeekday === 1) {
       const buckets = await getMyWorkBuckets(user.id);
       const weekItems = [
         ...buckets.overdue.map((t) => `Overdue: ${t.title}`),
