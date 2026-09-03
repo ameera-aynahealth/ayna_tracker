@@ -74,13 +74,21 @@ async function runBestVersionBootstrap() {
       taskMap.get('bvu-beta-20260903-123')?.ownerEmail === 'ameera@aynahealth.co' &&
       Number(oldRows[0]?.count ?? 0) === 0;
 
-    if (exactListLoaded) return;
+    if (!exactListLoaded) {
+      const replacementSql = await readFile(
+        path.join(process.cwd(), "db", "bootstrap", "best_version_scope_cleanup.sql"),
+        "utf8"
+      );
+      await sql.unsafe(replacementSql).simple();
+    }
 
-    const replacementSql = await readFile(
-      path.join(process.cwd(), "db", "bootstrap", "best_version_scope_cleanup.sql"),
+    // Keep Ameera's exact intake wording synced even after the base list has
+    // already been loaded. These statements are idempotent UPDATEs only.
+    const healthIntakeSql = await readFile(
+      path.join(process.cwd(), "db", "bootstrap", "best_version_health_intake_details.sql"),
       "utf8"
     );
-    await sql.unsafe(replacementSql).simple();
+    await sql.unsafe(healthIntakeSql).simple();
   } finally {
     await sql.end({ timeout: 5 });
   }
