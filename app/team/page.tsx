@@ -1,6 +1,7 @@
 import { getOrCreateCurrentUser } from "@/lib/auth";
 import { getTeamWorkload } from "@/lib/queries";
 import { AppShell } from "@/components/app-shell";
+import { TeamMemberActions } from "@/components/team-member-actions";
 import { Card, HorizontalBars, MetricCard } from "@/components/visuals";
 
 export default async function TeamPage() {
@@ -63,7 +64,7 @@ export default async function TeamPage() {
         </Card>
       </div>
 
-      <Card title="Team work snapshot" subtitle="Use this to redistribute deadlines before someone gets overloaded.">
+      <Card title="Team work snapshot" subtitle="Admins can remove a teammate without deleting their historical comments or activity.">
         <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
           {team.map((row) => (
             <div key={row.user.id} className="border border-border rounded-2xl p-4">
@@ -71,9 +72,10 @@ export default async function TeamPage() {
                 <div className="w-10 h-10 rounded-full bg-accent-soft text-accent-text flex items-center justify-center text-xs font-semibold">
                   {row.user.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
                 </div>
-                <div>
-                  <div className="text-sm font-semibold">{row.user.name}</div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold truncate">{row.user.name}</div>
                   <div className="text-xs text-text-muted capitalize">{row.user.role}</div>
+                  <div className="text-[11px] text-text-muted truncate">{row.user.email}</div>
                 </div>
               </div>
               <div className="grid grid-cols-4 gap-1.5 text-center">
@@ -82,6 +84,9 @@ export default async function TeamPage() {
                 <SmallMetric value={row.blocked} label="Blocked" tone="plum" />
                 <SmallMetric value={row.highPriority} label="High" tone="gold" />
               </div>
+              {user.role === "admin" && row.user.id !== user.id && (
+                <TeamMemberActions userId={row.user.id} userName={row.user.name} />
+              )}
             </div>
           ))}
         </div>
