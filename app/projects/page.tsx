@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, CircleAlert, UserRound } from "lucide-react";
+import { CalendarDays, ChevronRight, CircleAlert, UserRound } from "lucide-react";
 import { getOrCreateCurrentUser } from "@/lib/auth";
 import { getProjectsWithProgress } from "@/lib/queries";
 import { AppShell } from "@/components/app-shell";
@@ -46,14 +46,16 @@ export default async function ProjectsPage() {
           <Link
             key={project.id}
             href={`/projects/${project.id}`}
-            className="group border border-border bg-surface p-5 sm:p-6 hover:border-border-strong hover:-translate-y-0.5 transition-all"
+            className="group border border-border bg-surface p-5 sm:p-6 hover:border-border-strong hover:-translate-y-1 hover:shadow-[0_14px_34px_rgba(73,52,38,0.08)] active:translate-y-0 active:scale-[0.995] transition-all duration-200 ease-out"
             style={{ borderRadius: "24px 12px 12px 12px" }}
           >
             <div className="flex items-start gap-4 mb-5">
-              <ProgressRing value={project.progressPct} size={82} />
+              <div className="transition-transform duration-200 ease-out group-hover:scale-[1.03]">
+                <ProgressRing value={project.progressPct} size={82} />
+              </div>
               <div className="min-w-0 flex-1 pt-1">
                 <div className="flex items-start gap-2 justify-between">
-                  <h2 className="font-voice text-lg font-semibold leading-5 group-hover:text-accent-text break-words">{project.name}</h2>
+                  <h2 className="font-voice text-lg font-semibold leading-5 group-hover:text-accent-text break-words transition-colors duration-200">{project.name}</h2>
                   <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold ${healthClasses[project.health]}`}>{humanize(project.health)}</span>
                 </div>
                 {project.workstream && <div className="text-xs text-text-muted mt-1">{project.workstream.name}</div>}
@@ -70,6 +72,11 @@ export default async function ProjectsPage() {
               <div className="flex items-center gap-2"><UserRound size={13} className="text-text-muted" /><span className="truncate">{project.owner?.name ?? "No owner"}</span></div>
               <div className="flex items-center gap-2"><CircleAlert size={13} className="text-text-muted" /><span>{project.tasksDone} of {project.taskCount} complete</span></div>
               <div className="flex items-center gap-2"><CalendarDays size={13} className="text-text-muted" /><span>{project.dueDate ? `Due ${project.dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "No project deadline"}</span></div>
+            </div>
+
+            <div className="mt-5 pt-4 border-t border-border/70 flex items-center justify-between text-xs font-medium text-text-muted group-hover:text-accent-text transition-colors duration-200">
+              <span>Open project</span>
+              <ChevronRight size={15} className="transition-transform duration-200 ease-out group-hover:translate-x-1" />
             </div>
           </Link>
         ))}
