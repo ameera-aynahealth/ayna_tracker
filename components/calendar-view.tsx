@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, UserRound, UsersRound } from "lucide-react";
 
 export type CalendarTask = {
   id: string;
@@ -18,13 +18,16 @@ type View = "month" | "week";
 
 const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export function CalendarView({ tasks }: { tasks: CalendarTask[] }) {
+export function CalendarView({ tasks, myTaskIds = [] }: { tasks: CalendarTask[]; myTaskIds?: string[] }) {
   const [view, setView] = useState<View>("month");
+  const [scope, setScope] = useState<"mine" | "everyone">("everyone");
   const [anchor, setAnchor] = useState(() => new Date());
+  const myTaskIdSet = useMemo(() => new Set(myTaskIds), [myTaskIds]);
+  const visibleTasks = scope === "mine" ? tasks.filter((task) => myTaskIdSet.has(task.id)) : tasks;
 
   const taskMap = useMemo(() => {
     const map = new Map<string, CalendarTask[]>();
-    for (const task of tasks) {
+    for (const task of visibleTasks) {
       const key = localDayKey(new Date(task.dueAt));
       const current = map.get(key) ?? [];
       current.push(task);
@@ -32,7 +35,7 @@ export function CalendarView({ tasks }: { tasks: CalendarTask[] }) {
       map.set(key, current);
     }
     return map;
-  }, [tasks]);
+  }, [visibleTasks]);
 
   const days = view === "month" ? monthGridDays(anchor) : weekGridDays(anchor);
   const title = view === "month"
@@ -50,6 +53,17 @@ export function CalendarView({ tasks }: { tasks: CalendarTask[] }) {
 
   return (
     <div>
+      <div className="flex justify-end mb-3">
+        <div className="inline-flex rounded-xl border border-border bg-surface p-1">
+          <button onClick={() => setScope("mine")} className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold ${scope === "mine" ? "bg-accent-soft text-accent-text" : "text-text-secondary"}`}>
+            <UserRound size={14} />My tasks
+          </button>
+          <button onClick={() => setScope("everyone")} className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold ${scope === "everyone" ? "bg-accent-soft text-accent-text" : "text-text-secondary"}`}>
+            <UsersRound size={14} />Everyone's tasks
+          </button>
+        </div>
+      </div>
+
       <div className="border border-border bg-surface p-3 mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" style={{ borderRadius: "18px 9px 9px 9px" }}>
         <div className="flex items-center gap-2">
           <button onClick={() => move(-1)} className="p-2 rounded-xl hover:bg-surface-sunk" aria-label="Previous period"><ChevronLeft size={16} /></button>
@@ -74,10 +88,7 @@ export function CalendarView({ tasks }: { tasks: CalendarTask[] }) {
             const isToday = key === localDayKey(new Date());
             const isCurrentMonth = day.getMonth() === anchor.getMonth();
             return (
-              <div
-                key={`${key}-${index}`}
-                className={`min-h-[130px] sm:min-h-[155px] border-r border-b border-border p-1.5 sm:p-2.5 ${index % 7 === 6 ? "border-r-0" : ""} ${view === "month" && !isCurrentMonth ? "bg-page/35" : ""}`}
-              >
+              <div key={`${key}-${index}`} className={`min-h-[130px] sm:min-h-[155px] border-r border-b border-border p-1.5 sm:p-2.5 ${index % 7 === 6 ? "border-r-0" : ""} ${view === "month" && !isCurrentMonth ? "bg-page/35" : ""}`}>
                 <div className="flex items-center justify-between gap-1 mb-2">
                   <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${isToday ? "bg-accent text-white" : isCurrentMonth || view === "week" ? "text-text-secondary" : "text-text-muted"}`}>{day.getDate()}</span>
                   {dayTasks.length > 0 && <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${heatTone(dayTasks.length)}`}>{dayTasks.length}</span>}
