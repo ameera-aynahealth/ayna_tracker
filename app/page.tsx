@@ -44,7 +44,7 @@ export default async function HomePage() {
             </div>
             <div className="flex items-center gap-3">
               <Link href="/tasks" className="text-xs font-semibold text-accent-text">My tasks</Link>
-              <Link href="/tasks" className="text-xs font-semibold text-text-secondary inline-flex items-center gap-1">Everyone's tasks <ArrowRight size={12} /></Link>
+              <Link href="/tasks?scope=team" className="text-xs font-semibold text-text-secondary inline-flex items-center gap-1">Everyone's tasks <ArrowRight size={12} /></Link>
             </div>
           </div>
           <div className="border border-border bg-surface divide-y divide-border overflow-hidden rounded-2xl">
