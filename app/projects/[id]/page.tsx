@@ -3,6 +3,8 @@ import { CalendarDays, CircleAlert, UserRound } from "lucide-react";
 import { getOrCreateCurrentUser } from "@/lib/auth";
 import { ensureBestVersionMasterList } from "@/lib/best-version-bootstrap";
 import { ensureRecentMeetingEventTasks } from "@/lib/recent-meeting-event-bootstrap";
+import { ensureSep3MeetingTasks } from "@/lib/sep3-meeting-task-bootstrap";
+import { ensureSep3AppTaskProjectMapping } from "@/lib/sep3-app-project-repair";
 import { getActiveUsers, getMyWorkBuckets, getProjectWithTasks } from "@/lib/queries";
 import { AppShell } from "@/components/app-shell";
 import { ProjectTaskWorkspace } from "@/components/project-task-workspace";
@@ -15,6 +17,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const user = await getOrCreateCurrentUser();
   if (!user) return null;
 
+  await ensureSep3MeetingTasks();
+  await ensureSep3AppTaskProjectMapping();
   await ensureBestVersionMasterList(id);
   await ensureRecentMeetingEventTasks(id);
 
