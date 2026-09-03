@@ -22,6 +22,7 @@ export function emailLayout(input: {
   intro?: string;
   imageUrl?: string;
   imageAlt?: string;
+  imagePosition?: "middle" | "bottom";
   topSection?: { title: string; items: string[] };
   visualStats?: Array<{ label: string; value: number }>;
   sections?: Array<{ title: string; items: string[] }>;
@@ -77,6 +78,8 @@ export function emailLayout(input: {
     ? `<div style="margin-top:22px"><img src="${escapeHtml(input.imageUrl)}" alt="${escapeHtml(input.imageAlt ?? "Ayna morning motivation")}" width="540" style="display:block;width:100%;max-width:540px;height:auto;border:0;border-radius:16px" /></div>`
     : "";
 
+  const imagePosition = input.imagePosition ?? "middle";
+
   const cta = input.ctaLabel && input.ctaUrl
     ? `<div style="margin-top:28px"><a href="${escapeHtml(input.ctaUrl)}" style="display:inline-block;background:#A8532B;color:#FFF8F2;text-decoration:none;padding:11px 16px;border-radius:10px;font-size:14px;font-weight:600">${escapeHtml(input.ctaLabel)}</a></div>`
     : "";
@@ -92,8 +95,9 @@ export function emailLayout(input: {
           ${input.intro ? `<p style="font-size:14px;line-height:1.6;color:#6F6253;margin:0">${escapeHtml(input.intro)}</p>` : ""}
           ${topSection}
           ${stats}
-          ${image}
+          ${imagePosition === "middle" ? image : ""}
           ${sections}
+          ${imagePosition === "bottom" ? image : ""}
           ${cta}
           <div style="margin-top:28px;padding-top:18px;border-top:1px solid #EFE5D8;font-size:11px;line-height:1.5;color:#A19482">Ayna Tracker sends internal work reminders only. Notification preferences can be changed in Settings.</div>
         </div>
