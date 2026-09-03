@@ -34,6 +34,8 @@ const OPEN_STATUSES = OPEN_STATUS_LIST as unknown as Array<
   "backlog" | "not_started" | "in_progress" | "waiting" | "blocked" | "needs_review"
 >;
 
+const MORNING_GIF = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExbTVhajh2c2UxMW5rN243dTFicHFheWZyNmZmN29qczN6NWtseWE5MiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/CciM7ZRcjqY6P7HHdd/giphy.gif";
+
 function appUrl(path: string) {
   const base = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
   return `${base}${path}`;
@@ -55,6 +57,10 @@ function reminderDescriptor(daysUntil: number) {
     return { type: "overdue" as const, key: `${Math.abs(daysUntil)}d-overdue`, phrase: `${Math.abs(daysUntil)} days overdue` };
   }
   return null;
+}
+
+function taskLabel(task: { title: string; project?: { name: string } | null }) {
+  return task.project?.name ? `${task.title} — ${task.project.name}` : task.title;
 }
 
 async function claimDelivery(input: {
@@ -170,8 +176,8 @@ export async function processReminderCycle(now = new Date()): Promise<ReminderSu
     const localDay = formatInTimeZone(now, timezone, "yyyy-MM-dd");
     const localWeekday = Number(formatInTimeZone(now, timezone, "i"));
 
-    // The hourly cron gives a two-hour safety window. Dedupe keys guarantee
-    // that an 8:00 and 9:00 run can never send the same message twice.
+    // Existing task reminders keep a two-hour safety window. Dedupe keys make
+    // sure an 8:00 and 9:00 cron run can never send the same reminder twice.
     const isMorningWindow = localHour >= 8 && localHour < 10;
     if (!isMorningWindow) continue;
 
@@ -218,37 +224,45 @@ export async function processReminderCycle(now = new Date()): Promise<ReminderSu
       }, summary);
     }
 
-    if (user.dailyDigest) {
+    // Every active teammate gets one individualized wake-up brief at 9 AM in
+    // their tracker timezone. getMyWorkBuckets includes primary assignees,
+    // additional assignees, and review responsibility.
+    if (localHour === 9) {
       const buckets = await getMyWorkBuckets(user.id);
-      const hasDigestContent =
-        buckets.overdue.length + buckets.dueToday.length + buckets.dueTomorrow.length +
-        buckets.blocked.length + buckets.waiting.length + buckets.needsReview.length > 0;
+      const firstName = (user.name.trim().split(/\s+/)[0] || "BADDIE").toUpperCase();
+      const dueTodayCount = buckets.dueToday.length;
+      const remainingCount = buckets.all.length;
+      const wakeTitle = `WAKE UP ${firstName} U HAVE SHIT TO GET DONEEE HERES THE BREAKDOWN BADDIE`;
 
-      if (hasDigestContent) {
-        await deliver({
-          dedupeKey: `daily:${user.id}:${localDay}`,
-          user,
-          type: "daily_digest",
-          title: "Your Ayna priorities for today",
-          subject: "Your Ayna priorities for today",
-          createInApp: false,
-          html: emailLayout({
-            eyebrow: "Daily brief",
-            title: "Your Ayna priorities for today",
-            intro: "Here is the work that needs your attention first.",
-            sections: [
-              { title: "Overdue", items: buckets.overdue.slice(0, 8).map((t) => t.title) },
-              { title: "Due today", items: buckets.dueToday.slice(0, 8).map((t) => t.title) },
-              { title: "Due tomorrow", items: buckets.dueTomorrow.slice(0, 6).map((t) => t.title) },
-              { title: "Blocked", items: buckets.blocked.slice(0, 6).map((t) => t.title) },
-              { title: "Waiting", items: buckets.waiting.slice(0, 6).map((t) => t.title) },
-              { title: "Needs review", items: buckets.needsReview.slice(0, 6).map((t) => t.title) },
-            ],
-            ctaLabel: "Open My Work",
-            ctaUrl: appUrl("/my-work"),
-          }),
-        }, summary);
-      }
+      await deliver({
+        dedupeKey: `daily:${user.id}:${localDay}`,
+        user,
+        type: "daily_digest",
+        title: wakeTitle,
+        body: `${dueTodayCount} due today. ${remainingCount} total tasks left.`,
+        subject: `WAKE UP ${firstName} — ${dueTodayCount} DUE TODAY / ${remainingCount} LEFT`,
+        createInApp: false,
+        html: emailLayout({
+          eyebrow: "9 AM ayna wake-up",
+          title: wakeTitle,
+          intro: `${dueTodayCount} ${dueTodayCount === 1 ? "task" : "tasks"} due today. ${remainingCount} total ${remainingCount === 1 ? "task" : "tasks"} left on your plate.`,
+          imageUrl: MORNING_GIF,
+          imageAlt: "Morning motivation",
+          sections: [
+            { title: "The numbers", items: [`Due today: ${dueTodayCount}`, `Total tasks left: ${remainingCount}`, `Overdue: ${buckets.overdue.length}`, `Needs review: ${buckets.needsReview.length}`] },
+            { title: "Due today", items: buckets.dueToday.slice(0, 12).map(taskLabel) },
+            { title: "Overdue", items: buckets.overdue.slice(0, 10).map(taskLabel) },
+            { title: "Due tomorrow", items: buckets.dueTomorrow.slice(0, 8).map(taskLabel) },
+            { title: "Coming up this week", items: buckets.thisWeek.slice(0, 10).map(taskLabel) },
+            { title: "Blocked", items: buckets.blocked.slice(0, 8).map(taskLabel) },
+            { title: "Waiting", items: buckets.waiting.slice(0, 8).map(taskLabel) },
+            { title: "Needs review", items: buckets.needsReview.slice(0, 8).map(taskLabel) },
+            { title: "No due date yet", items: buckets.noDueDate.slice(0, 8).map(taskLabel) },
+          ],
+          ctaLabel: "Open my tasks",
+          ctaUrl: appUrl("/my-work"),
+        }),
+      }, summary);
     }
 
     if (user.weeklyDigest && localWeekday === 1) {
