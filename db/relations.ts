@@ -5,6 +5,7 @@ import {
   milestones,
   projects,
   taskCollaborators,
+  taskReviewers,
   taskTags,
   tasks,
   tags,
@@ -55,6 +56,17 @@ export const taskCollaboratorsRelations = relations(taskCollaborators, ({ one })
   }),
   user: one(users, {
     fields: [taskCollaborators.userId],
+    references: [users.id],
+  }),
+}));
+
+export const taskReviewersRelations = relations(taskReviewers, ({ one }) => ({
+  task: one(tasks, {
+    fields: [taskReviewers.taskId],
+    references: [tasks.id],
+  }),
+  user: one(users, {
+    fields: [taskReviewers.userId],
     references: [users.id],
   }),
 }));
