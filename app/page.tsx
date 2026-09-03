@@ -1,100 +1,121 @@
-import { getOrCreateCurrentUser } from "@/lib/auth";
-import { getHomeSummary, getTopPriorities, getProjectsWithProgress, getTeamWorkload } from "@/lib/queries";
-import { AppShell } from "@/components/app-shell";
-import { TaskStatCard } from "@/components/task-stat-card";
-import { PriorityCard } from "@/components/priority-card";
 import Link from "next/link";
+import { ArrowRight } from "lucide-react";
+import { getOrCreateCurrentUser } from "@/lib/auth";
+import { ensureSep3MeetingTasks } from "@/lib/sep3-meeting-task-bootstrap";
+import { ensureSep3AppTaskProjectMapping } from "@/lib/sep3-app-project-repair";
+import { getHomeSummary, getProjectsWithProgress, getTopPriorities } from "@/lib/queries";
+import { AppShell } from "@/components/app-shell";
+import { TaskRow } from "@/components/task-row";
 
 export default async function HomePage() {
   const user = await getOrCreateCurrentUser();
   if (!user) return null;
 
-  const [summary, priorities, projects, team] = await Promise.all([
+  await ensureSep3MeetingTasks();
+  await ensureSep3AppTaskProjectMapping();
+
+  const [summary, priorities, projects] = await Promise.all([
     getHomeSummary(user.id),
-    getTopPriorities(user.id),
+    getTopPriorities(user.id, 5),
     getProjectsWithProgress(),
-    getTeamWorkload(),
   ]);
 
   const firstName = user.name.split(" ")[0] || user.name;
 
   return (
-    <AppShell active="Home" currentUserName={user.name}>
-      <div className="mb-7">
-        <h1 className="font-voice text-3xl font-semibold mb-1">Welcome back, {firstName}</h1>
-        <p className="text-sm text-text-secondary">
-          Ready to work on Ayna? You have{" "}
-          <Link href="/my-work" className="text-brick-text font-semibold">{summary.overdue} overdue tasks</Link>,{" "}
-          <Link href="/my-work" className="text-gold-text font-semibold">{summary.dueToday} due today</Link>, and{" "}
-          <Link href="/my-work" className="text-plum-text font-semibold">{summary.waiting} item{summary.waiting === 1 ? "" : "s"} waiting</Link> on someone else.
-        </p>
+    <AppShell active="Home" currentUser={user}>
+      <section className="mb-8">
+        <h1 className="font-voice text-3xl sm:text-4xl font-semibold tracking-tight">Welcome back, {firstName}</h1>
+        <p className="font-voice text-xl sm:text-2xl text-text-secondary mt-1">Ready to work on Ayna?</p>
+      </section>
+
+      <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-7 max-w-3xl">
+        <HomeSignal label="Overdue" value={summary.overdue} href="/tasks" tone="brick" />
+        <HomeSignal label="Due today" value={summary.dueToday} href="/tasks" tone="gold" />
+        <HomeSignal label="Waiting" value={summary.waiting} href="/tasks" tone="plum" />
       </div>
 
-      <div className="grid grid-cols-4 gap-3.5 mb-7">
-        <TaskStatCard label="Overdue" value={summary.overdue} tone="brick" />
-        <TaskStatCard label="Due today" value={summary.dueToday} tone="gold" />
-        <TaskStatCard label="Due this week" value={summary.dueThisWeek} tone="accent" />
-        <TaskStatCard label="Blocked" value={summary.blocked} tone="plum" />
-      </div>
-
-      <div className="flex items-baseline justify-between mb-2">
-        <h2 className="font-voice text-lg font-semibold">What should I work on next?</h2>
-        <Link href="/my-work" className="text-sm text-text-muted">View all my work</Link>
-      </div>
-
-      {priorities.length === 0 ? (
-        <div className="border border-border rounded-xl bg-surface p-6 text-sm text-text-secondary mb-7">
-          Nothing urgent right now. You&apos;re caught up.
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-3 mb-7">
-          {priorities.map((t) => (
-            <PriorityCard key={t.id} task={t} />
-          ))}
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="border border-border bg-surface p-5" style={{ borderRadius: "20px 10px 10px 10px" }}>
-          <h3 className="font-voice text-base font-semibold mb-3">Project health</h3>
-          <div className="flex flex-col gap-3">
-            {projects.slice(0, 5).map((p) => (
-              <Link key={p.id} href={`/projects/${p.id}`} className="flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium truncate">{p.name}</span>
-                    <span className="text-xs text-text-muted ml-2 shrink-0">{p.tasksDone}/{p.taskCount}</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-surface-sunk overflow-hidden">
-                    <div className="h-full bg-accent rounded-full" style={{ width: `${p.progressPct}%` }} />
-                  </div>
-                </div>
-              </Link>
-            ))}
-            {projects.length === 0 && <p className="text-sm text-text-muted">No projects yet.</p>}
+      <div className="grid xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)] gap-5">
+        <section>
+          <div className="flex items-end justify-between gap-4 mb-3">
+            <div>
+              <h2 className="font-voice text-xl font-semibold">Your day</h2>
+              <p className="text-xs text-text-muted mt-0.5">The few things most worth moving next.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Link href="/tasks" className="text-xs font-semibold text-accent-text">My tasks</Link>
+              <Link href="/tasks?scope=team" className="text-xs font-semibold text-text-secondary inline-flex items-center gap-1">Everyone's tasks <ArrowRight size={12} /></Link>
+            </div>
           </div>
-        </div>
-
-        <div className="border border-border bg-surface p-5" style={{ borderRadius: "20px 10px 10px 10px" }}>
-          <h3 className="font-voice text-base font-semibold mb-3">Team workload</h3>
-          <div className="flex flex-col gap-3.5">
-            {team.map((t) => (
-              <div key={t.user.id} className="flex items-center gap-3">
-                <span className="text-sm w-20 shrink-0 truncate">{t.user.name.split(" ")[0]}</span>
-                <div className="flex-1 h-2 rounded-full bg-surface-sunk overflow-hidden">
-                  <div
-                    className="h-full bg-accent opacity-75 rounded-full"
-                    style={{ width: `${Math.min(100, (t.active / 10) * 100)}%` }}
-                  />
-                </div>
-                <span className="text-xs text-text-secondary w-24 text-right shrink-0">
-                  {t.active} active{t.overdue ? `, ${t.overdue} late` : ""}
-                </span>
+          <div className="border border-border bg-surface divide-y divide-border overflow-hidden rounded-2xl">
+            {priorities.map((task) => <TaskRow key={task.id} task={task} />)}
+            {priorities.length === 0 && (
+              <div className="p-10 text-center">
+                <div className="font-voice text-lg font-semibold">Nothing urgent right now</div>
+                <p className="text-sm text-text-muted mt-1">Your priority queue is clear.</p>
               </div>
-            ))}
+            )}
           </div>
+        </section>
+
+        <div className="space-y-5">
+          <section>
+            <div className="flex items-end justify-between gap-4 mb-3">
+              <div>
+                <h2 className="font-voice text-xl font-semibold">Active projects</h2>
+                <p className="text-xs text-text-muted mt-0.5">A quick progress check.</p>
+              </div>
+              <Link href="/projects" className="text-xs font-semibold text-accent-text">View all</Link>
+            </div>
+            <div className="border border-border bg-surface rounded-2xl divide-y divide-border overflow-hidden">
+              {projects.slice(0, 4).map((project) => (
+                <Link key={project.id} href={`/projects/${project.id}`} className="block p-4 hover:bg-page/50">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-medium truncate">{project.name}</div>
+                    <div className="text-xs font-semibold text-text-secondary">{project.progressPct}%</div>
+                  </div>
+                  <div className="h-1.5 bg-surface-sunk rounded-full mt-2.5 overflow-hidden">
+                    <div className="h-full bg-accent rounded-full" style={{ width: `${project.progressPct}%` }} />
+                  </div>
+                  {(project.overdueCount > 0 || project.blockedCount > 0) && (
+                    <div className="text-[11px] text-text-muted mt-2">
+                      {project.overdueCount > 0 && <span className="text-brick-text font-semibold">{project.overdueCount} overdue</span>}
+                      {project.overdueCount > 0 && project.blockedCount > 0 && <span> · </span>}
+                      {project.blockedCount > 0 && <span className="text-plum-text font-semibold">{project.blockedCount} blocked</span>}
+                    </div>
+                  )}
+                </Link>
+              ))}
+              {projects.length === 0 && <div className="p-5 text-sm text-text-muted">No active projects yet.</div>}
+            </div>
+          </section>
+
+          <Link href="/trackers" className="block border border-border bg-surface rounded-2xl p-5 hover:border-border-strong group">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-voice text-xl font-semibold group-hover:text-accent-text">Trackers</h2>
+                <p className="text-sm text-text-secondary mt-1">Partnerships, influencers, outreach, and anything else your team needs to keep moving.</p>
+              </div>
+              <ArrowRight size={17} className="text-text-muted group-hover:text-accent-text shrink-0" />
+            </div>
+          </Link>
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function HomeSignal({ label, value, href, tone }: { label: string; value: number; href: string; tone: "brick" | "gold" | "plum" }) {
+  const classes = {
+    brick: "bg-brick-soft text-brick-text",
+    gold: "bg-gold-soft text-gold-text",
+    plum: "bg-plum-soft text-plum-text",
+  }[tone];
+
+  return (
+    <Link href={href} className={`rounded-2xl p-3 sm:p-4 ${classes} hover:-translate-y-0.5 transition-transform`}>
+      <div className="font-voice text-2xl sm:text-3xl font-semibold">{value}</div>
+      <div className="text-[11px] sm:text-xs mt-1 font-medium">{label}</div>
+    </Link>
   );
 }
