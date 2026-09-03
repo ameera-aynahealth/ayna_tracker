@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { getOrCreateCurrentUser } from "@/lib/auth";
+import { ensureSep3MeetingTasks } from "@/lib/sep3-meeting-task-bootstrap";
 import { getHomeSummary, getProjectsWithProgress, getTopPriorities } from "@/lib/queries";
 import { AppShell } from "@/components/app-shell";
 import { TaskRow } from "@/components/task-row";
@@ -8,6 +9,8 @@ import { TaskRow } from "@/components/task-row";
 export default async function HomePage() {
   const user = await getOrCreateCurrentUser();
   if (!user) return null;
+
+  await ensureSep3MeetingTasks();
 
   const [summary, priorities, projects] = await Promise.all([
     getHomeSummary(user.id),
@@ -78,19 +81,8 @@ export default async function HomePage() {
                   )}
                 </Link>
               ))}
-              {projects.length === 0 && <div className="p-5 text-sm text-text-muted">No active projects yet.</div>}
             </div>
           </section>
-
-          <Link href="/trackers" className="block border border-border bg-surface rounded-2xl p-5 hover:border-border-strong group">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="font-voice text-xl font-semibold group-hover:text-accent-text">Trackers</h2>
-                <p className="text-sm text-text-secondary mt-1">Partnerships, influencers, outreach, and anything else your team needs to keep moving.</p>
-              </div>
-              <ArrowRight size={17} className="text-text-muted group-hover:text-accent-text shrink-0" />
-            </div>
-          </Link>
         </div>
       </div>
     </AppShell>
@@ -98,16 +90,16 @@ export default async function HomePage() {
 }
 
 function HomeSignal({ label, value, href, tone }: { label: string; value: number; href: string; tone: "brick" | "gold" | "plum" }) {
-  const classes = {
-    brick: "bg-brick-soft text-brick-text",
-    gold: "bg-gold-soft text-gold-text",
-    plum: "bg-plum-soft text-plum-text",
-  }[tone];
+  const toneClass = tone === "brick"
+    ? "bg-brick-soft text-brick-text"
+    : tone === "gold"
+      ? "bg-gold-soft text-gold-text"
+      : "bg-plum-soft text-plum-text";
 
   return (
-    <Link href={href} className={`rounded-2xl p-3 sm:p-4 ${classes} hover:-translate-y-0.5 transition-transform`}>
-      <div className="font-voice text-2xl sm:text-3xl font-semibold">{value}</div>
-      <div className="text-[11px] sm:text-xs mt-1 font-medium">{label}</div>
+    <Link href={href} className={`rounded-2xl px-3 py-3 sm:px-4 sm:py-4 ${toneClass}`}>
+      <div className="text-xl sm:text-2xl font-semibold">{value}</div>
+      <div className="text-[11px] sm:text-xs font-medium mt-0.5">{label}</div>
     </Link>
   );
 }
