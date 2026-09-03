@@ -1,11 +1,21 @@
 "use server";
 
 import { db } from "@/db";
-import { attachments, comments, notifications, subtasks, tasks, users } from "@/db/schema";
+import {
+  attachments,
+  comments,
+  notifications,
+  subtasks,
+  taskCollaborators,
+  taskReviewers,
+  tasks,
+  users,
+} from "@/db/schema";
 import { requireEditPermission } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { ensureTaskPeopleSchema } from "@/lib/ensure-task-people";
 import { nanoid } from "nanoid";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -27,6 +37,7 @@ const createTaskSchema = z.object({
   projectId: z.string().optional(),
   workstreamId: z.string().optional(),
   ownerId: z.string().optional(),
+  assigneeIds: z.array(z.string()).optional(),
   dueAt: z.string().optional(),
   priority: prioritySchema.default("medium"),
   status: statusSchema.default("not_started"),
@@ -40,7 +51,33 @@ function revalidateTaskSurfaces(projectId?: string | null) {
   revalidatePath("/calendar");
   revalidatePath("/analytics");
   revalidatePath("/inbox");
+  revalidatePath("/team");
   if (projectId) revalidatePath(`/projects/${projectId}`);
+}
+
+function uniqueIds(ids: Array<string | null | undefined>) {
+  return [...new Set(ids.filter((id): id is string => Boolean(id)))];
+}
+
+async function validateActiveWorkspaceUsers(workspaceId: string, ids: string[]) {
+  const requested = uniqueIds(ids);
+  if (!requested.length) return [];
+  const rows = await db.query.users.findMany({
+    where: and(
+      eq(users.workspaceId, workspaceId),
+      eq(users.active, true),
+      inArray(users.id, requested)
+    ),
+  });
+  if (rows.length !== requested.length) throw new Error("One or more selected teammates are no longer active");
+  return requested;
+}
+
+async function getTaskAssigneeIds(taskId: string, ownerId: string | null) {
+  const rows = await db.select({ userId: taskCollaborators.userId })
+    .from(taskCollaborators)
+    .where(eq(taskCollaborators.taskId, taskId));
+  return uniqueIds([ownerId, ...rows.map((row) => row.userId)]);
 }
 
 export async function createTaskQuick(input: z.input<typeof createTaskSchema>) {
@@ -48,27 +85,44 @@ export async function createTaskQuick(input: z.input<typeof createTaskSchema>) {
   const parsed = createTaskSchema.parse(input);
   const id = nanoid();
   const dueAt = parsed.dueAt ? new Date(parsed.dueAt) : undefined;
+  const requestedAssignees = parsed.assigneeIds?.length
+    ? parsed.assigneeIds
+    : parsed.ownerId
+      ? [parsed.ownerId]
+      : [];
+  const assigneeIds = await validateActiveWorkspaceUsers(user.workspaceId, requestedAssignees);
+  const primaryOwnerId = assigneeIds[0];
 
-  await db.insert(tasks).values({
-    id,
-    workspaceId: user.workspaceId,
-    projectId: parsed.projectId,
-    workstreamId: parsed.workstreamId,
-    title: parsed.title,
-    ownerId: parsed.ownerId,
-    createdById: user.id,
-    priority: parsed.priority,
-    status: parsed.status,
-    dueAt,
-    originalDueAt: dueAt,
+  await db.transaction(async (tx) => {
+    await tx.insert(tasks).values({
+      id,
+      workspaceId: user.workspaceId,
+      projectId: parsed.projectId,
+      workstreamId: parsed.workstreamId,
+      title: parsed.title,
+      ownerId: primaryOwnerId,
+      createdById: user.id,
+      priority: parsed.priority,
+      status: parsed.status,
+      dueAt,
+      originalDueAt: dueAt,
+    });
+
+    const additionalAssignees = assigneeIds.slice(1);
+    if (additionalAssignees.length) {
+      await tx.insert(taskCollaborators).values(
+        additionalAssignees.map((userId) => ({ taskId: id, userId }))
+      ).onConflictDoNothing();
+    }
   });
 
   await logActivity({ taskId: id, userId: user.id, action: "created", newValue: parsed.title });
 
-  if (parsed.ownerId && parsed.ownerId !== user.id) {
+  for (const assigneeId of assigneeIds) {
+    if (assigneeId === user.id) continue;
     await db.insert(notifications).values({
       id: nanoid(),
-      userId: parsed.ownerId,
+      userId: assigneeId,
       taskId: id,
       type: "assigned",
       title: `New task assigned: ${parsed.title}`,
@@ -82,7 +136,8 @@ export async function createTaskQuick(input: z.input<typeof createTaskSchema>) {
     title: parsed.title,
     projectId: parsed.projectId ?? null,
     workstreamId: parsed.workstreamId ?? null,
-    ownerId: parsed.ownerId ?? null,
+    ownerId: primaryOwnerId ?? null,
+    assigneeIds,
     dueAt: dueAt?.toISOString() ?? null,
     priority: parsed.priority,
     status: parsed.status,
@@ -154,15 +209,19 @@ export async function updateTaskStatus(input: z.infer<typeof updateStatusSchema>
     newValue: parsed.status,
   });
 
-  if (parsed.status === "blocked" && existing.ownerId && existing.ownerId !== user.id) {
-    await db.insert(notifications).values({
-      id: nanoid(),
-      userId: existing.ownerId,
-      taskId: existing.id,
-      type: "blocked",
-      title: `Task blocked: ${existing.title}`,
-      body: parsed.blockedReason ?? existing.blockedReason ?? undefined,
-    });
+  if (parsed.status === "blocked") {
+    const assigneeIds = await getTaskAssigneeIds(existing.id, existing.ownerId);
+    for (const assigneeId of assigneeIds) {
+      if (assigneeId === user.id) continue;
+      await db.insert(notifications).values({
+        id: nanoid(),
+        userId: assigneeId,
+        taskId: existing.id,
+        type: "blocked",
+        title: `Task blocked: ${existing.title}`,
+        body: parsed.blockedReason ?? existing.blockedReason ?? undefined,
+      });
+    }
   }
 
   revalidateTaskSurfaces(existing.projectId);
@@ -222,6 +281,56 @@ export async function updateTaskField(input: {
   if (input.field === "projectId" && existing.projectId && existing.projectId !== input.value) {
     revalidatePath(`/projects/${existing.projectId}`);
   }
+}
+
+export async function setTaskAssignees(taskId: string, requestedIds: string[]) {
+  const user = await requireEditPermission();
+  const task = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
+  if (!task) throw new Error("Task not found");
+
+  const assigneeIds = await validateActiveWorkspaceUsers(user.workspaceId, requestedIds);
+  const previousIds = await getTaskAssigneeIds(taskId, task.ownerId);
+  const primaryOwnerId = task.ownerId && assigneeIds.includes(task.ownerId)
+    ? task.ownerId
+    : assigneeIds[0] ?? null;
+  const additionalIds = assigneeIds.filter((id) => id !== primaryOwnerId);
+
+  await db.transaction(async (tx) => {
+    await tx.update(tasks).set({
+      ownerId: primaryOwnerId,
+      updatedAt: new Date(),
+      lastActivityAt: new Date(),
+    }).where(eq(tasks.id, taskId));
+    await tx.delete(taskCollaborators).where(eq(taskCollaborators.taskId, taskId));
+    if (additionalIds.length) {
+      await tx.insert(taskCollaborators).values(
+        additionalIds.map((userId) => ({ taskId, userId }))
+      ).onConflictDoNothing();
+    }
+  });
+
+  await logActivity({
+    taskId,
+    userId: user.id,
+    action: "assignees_changed",
+    field: "assignees",
+    oldValue: previousIds.join(","),
+    newValue: assigneeIds.join(","),
+  });
+
+  for (const assigneeId of assigneeIds) {
+    if (assigneeId === user.id || previousIds.includes(assigneeId)) continue;
+    await db.insert(notifications).values({
+      id: nanoid(),
+      userId: assigneeId,
+      taskId,
+      type: "assigned",
+      title: `Task assigned to you: ${task.title}`,
+    });
+  }
+
+  revalidatePath(`/tasks/${taskId}`);
+  revalidateTaskSurfaces(task.projectId);
 }
 
 export async function bulkUpdateTasks(input: {
@@ -321,10 +430,12 @@ export async function addComment(taskId: string, body: string) {
     });
   }
 
-  if (task.ownerId && task.ownerId !== user.id && !mentioned.some((m) => m.id === task.ownerId)) {
+  const assigneeIds = await getTaskAssigneeIds(taskId, task.ownerId);
+  for (const assigneeId of assigneeIds) {
+    if (assigneeId === user.id || mentioned.some((member) => member.id === assigneeId)) continue;
     await db.insert(notifications).values({
       id: nanoid(),
-      userId: task.ownerId,
+      userId: assigneeId,
       taskId,
       type: "comment",
       title: `${user.name} commented on ${task.title}`,
@@ -338,30 +449,58 @@ export async function addComment(taskId: string, body: string) {
 
 // ---- Review workflow ------------------------------------------------------
 
-export async function requestTaskReview(taskId: string, reviewerId: string) {
+export async function requestTaskReview(taskId: string, reviewerIdsInput: string[] | string) {
   const user = await requireEditPermission();
+  await ensureTaskPeopleSchema();
   const task = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
   if (!task) throw new Error("Task not found");
 
-  await db.update(tasks).set({
-    reviewerId,
-    reviewRequired: true,
-    status: "needs_review",
-    updatedAt: new Date(),
-    lastActivityAt: new Date(),
-  }).where(eq(tasks.id, taskId));
-  await logActivity({ taskId, userId: user.id, action: "review_requested", newValue: reviewerId });
-  await db.insert(notifications).values({
-    id: nanoid(), userId: reviewerId, taskId, type: "review_requested", title: `Review requested: ${task.title}`,
+  const requestedIds = Array.isArray(reviewerIdsInput) ? reviewerIdsInput : [reviewerIdsInput];
+  const reviewerIds = await validateActiveWorkspaceUsers(user.workspaceId, requestedIds);
+  if (!reviewerIds.length) throw new Error("Choose at least one reviewer");
+
+  await db.transaction(async (tx) => {
+    await tx.update(tasks).set({
+      reviewerId: reviewerIds[0],
+      reviewRequired: true,
+      status: "needs_review",
+      updatedAt: new Date(),
+      lastActivityAt: new Date(),
+    }).where(eq(tasks.id, taskId));
+    await tx.delete(taskReviewers).where(eq(taskReviewers.taskId, taskId));
+    await tx.insert(taskReviewers).values(
+      reviewerIds.map((userId) => ({ taskId, userId }))
+    ).onConflictDoNothing();
   });
+
+  await logActivity({ taskId, userId: user.id, action: "review_requested", newValue: reviewerIds.join(",") });
+  for (const reviewerId of reviewerIds) {
+    if (reviewerId === user.id) continue;
+    await db.insert(notifications).values({
+      id: nanoid(),
+      userId: reviewerId,
+      taskId,
+      type: "review_requested",
+      title: `Review requested: ${task.title}`,
+    });
+  }
+  revalidatePath(`/tasks/${taskId}`);
   revalidateTaskSurfaces(task.projectId);
 }
 
 export async function resolveTaskReview(taskId: string, decision: "approve" | "changes") {
   const user = await requireEditPermission();
+  await ensureTaskPeopleSchema();
   const task = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
   if (!task) throw new Error("Task not found");
-  if (task.reviewerId && task.reviewerId !== user.id && user.role !== "admin") throw new Error("Only the reviewer or an admin can resolve this review");
+
+  const reviewerRows = await db.select({ userId: taskReviewers.userId })
+    .from(taskReviewers)
+    .where(eq(taskReviewers.taskId, taskId));
+  const allowedReviewerIds = uniqueIds([task.reviewerId, ...reviewerRows.map((row) => row.userId)]);
+  if (!allowedReviewerIds.includes(user.id) && user.role !== "admin") {
+    throw new Error("Only a selected reviewer or an admin can resolve this review");
+  }
 
   const approved = decision === "approve";
   await db.update(tasks).set({
@@ -374,12 +513,18 @@ export async function resolveTaskReview(taskId: string, decision: "approve" | "c
   }).where(eq(tasks.id, taskId));
   await logActivity({ taskId, userId: user.id, action: approved ? "review_approved" : "changes_requested" });
 
-  if (task.ownerId && task.ownerId !== user.id) {
+  const assigneeIds = await getTaskAssigneeIds(taskId, task.ownerId);
+  for (const assigneeId of assigneeIds) {
+    if (assigneeId === user.id) continue;
     await db.insert(notifications).values({
-      id: nanoid(), userId: task.ownerId, taskId, type: "project_update",
+      id: nanoid(),
+      userId: assigneeId,
+      taskId,
+      type: "project_update",
       title: approved ? `Review approved: ${task.title}` : `Changes requested: ${task.title}`,
     });
   }
+  revalidatePath(`/tasks/${taskId}`);
   revalidateTaskSurfaces(task.projectId);
 }
 
