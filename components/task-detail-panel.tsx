@@ -1,10 +1,9 @@
 "use client";
 
-import { FormEvent, useState, useTransition } from "react";
-import { CheckCircle2, Circle, ExternalLink, Link2, Save, UsersRound } from "lucide-react";
+import { useState, useTransition } from "react";
+import { CheckCircle2, Circle, Save, UsersRound } from "lucide-react";
 import { formatDueBadge } from "@/lib/format";
 import {
-  addAttachmentLink,
   addComment,
   addSubtask,
   requestTaskReview,
@@ -14,11 +13,12 @@ import {
   updateTaskField,
   updateTaskStatus,
 } from "@/lib/actions/tasks";
+import { TaskAttachments } from "@/components/task-attachments";
 
 type Subtask = { id: string; title: string; completed: boolean };
 type Comment = { id: string; body: string; createdAt: Date; user: { name: string } };
 type Activity = { id: string; action: string; field: string | null; oldValue: string | null; newValue: string | null; createdAt: Date; user: { name: string } };
-type Attachment = { id: string; name: string; url: string; kind: string; createdAt: Date };
+type Attachment = { id: string; name: string; url: string; kind: string; fileSize?: number | null; createdAt: Date };
 type Person = { id: string; name: string };
 type PersonLink = { user: Person };
 type Project = { id: string; name: string };
@@ -98,8 +98,6 @@ export function TaskDetailPanel({
   const [activeReviewerIds, setActiveReviewerIds] = useState<string[]>(initialReviewerIds);
   const [newSubtask, setNewSubtask] = useState("");
   const [newComment, setNewComment] = useState("");
-  const [linkName, setLinkName] = useState("");
-  const [linkUrl, setLinkUrl] = useState("");
   const [showActivity, setShowActivity] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
@@ -165,16 +163,6 @@ export function TaskDetailPanel({
     if (!clean) return;
     setNewComment("");
     startTransition(async () => { await addComment(task.id, clean); });
-  }
-
-  function submitAttachment(event: FormEvent) {
-    event.preventDefault();
-    if (!linkName.trim() || !linkUrl.trim()) return;
-    const name = linkName.trim();
-    const url = linkUrl.trim();
-    setLinkName("");
-    setLinkUrl("");
-    startTransition(async () => { await addAttachmentLink(task.id, name, url); });
   }
 
   function requestReview() {
@@ -255,19 +243,7 @@ export function TaskDetailPanel({
           </Section>
 
           <Section title="Links and files">
-            <div className="space-y-2 mb-4">
-              {task.attachments.map((attachment) => (
-                <a key={attachment.id} href={attachment.url} target="_blank" rel="noreferrer" className="flex items-center gap-3 border border-border rounded-xl p-3 hover:border-border-strong">
-                  <Link2 size={15} className="text-accent-text shrink-0" /><span className="text-sm font-medium flex-1 min-w-0 truncate">{attachment.name}</span><ExternalLink size={13} className="text-text-muted" />
-                </a>
-              ))}
-              {task.attachments.length === 0 && <p className="text-sm text-text-muted">No links or files attached yet.</p>}
-            </div>
-            <form onSubmit={submitAttachment} className="grid sm:grid-cols-[1fr_1.5fr_auto] gap-2">
-              <input value={linkName} onChange={(event) => setLinkName(event.target.value)} placeholder="Link name" className="field-input" />
-              <input value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="https://" className="field-input" />
-              <button className="border border-border rounded-xl px-3 py-2 text-sm font-semibold">Attach</button>
-            </form>
+            <TaskAttachments taskId={task.id} initialAttachments={task.attachments} />
           </Section>
 
           <Section title="Activity">
@@ -365,6 +341,8 @@ function describeActivity(activity: Activity) {
   if (activity.action === "review_approved") return "approved the review";
   if (activity.action === "changes_requested") return "requested changes";
   if (activity.action === "assignees_changed") return "updated the assignees";
+  if (activity.action === "file_attached") return `attached file “${activity.newValue ?? ""}”`;
+  if (activity.action === "link_attached") return `attached link “${activity.newValue ?? ""}”`;
   return humanize(activity.action).toLowerCase();
 }
 
