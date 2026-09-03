@@ -45,7 +45,7 @@ SET title = 'Health intake Section 3: Relevant Symptoms',
 WHERE id = 'bvu-beta-20260903-045';
 
 UPDATE tasks
-SET description = 'Questions/fields: diagnosed conditions; allergies/sensitivities; pregnancy/TTC/postpartum/breastfeeding status; medications and hormonal treatments; supplements; serious reactions; products/treatments stopped because of reactions or side effects; whether symptoms are new, worsening, or interfering with daily function.'
+SET description = 'Questions/fields: diagnosed conditions, with an Other / not listed free-text option so users can manually enter a condition that is not in the preset list; allergies/sensitivities; pregnancy/TTC/postpartum/breastfeeding status; medications and hormonal treatments; supplements; serious reactions; products/treatments stopped because of reactions or side effects; whether symptoms are new, worsening, or interfering with daily function.'
 WHERE id = 'bvu-beta-20260903-046';
 
 UPDATE tasks
