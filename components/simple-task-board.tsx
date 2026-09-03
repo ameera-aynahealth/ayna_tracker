@@ -25,14 +25,16 @@ export function SimpleTaskBoard({
   currentUserId,
   people,
   projects,
+  defaultTab = "mine",
 }: {
   mine: Task[];
   all: Task[];
   currentUserId: string;
   people: Option[];
   projects: Option[];
+  defaultTab?: Tab;
 }) {
-  const [tab, setTab] = useState<Tab>("mine");
+  const [tab, setTab] = useState<Tab>(defaultTab);
   const [query, setQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [status, setStatus] = useState("open");
@@ -77,7 +79,7 @@ export function SimpleTaskBoard({
               onClick={() => setTab(item)}
               className={`px-4 py-2 rounded-lg text-sm font-semibold capitalize transition-colors ${tab === item ? "bg-accent text-white" : "text-text-secondary hover:bg-page"}`}
             >
-              {item === "mine" ? "Mine" : item === "team" ? "Team" : "All"}
+              {item === "mine" ? "Mine" : item === "team" ? "Everyone's tasks" : "All incl. completed"}
             </button>
           ))}
         </div>
