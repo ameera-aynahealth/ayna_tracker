@@ -122,6 +122,7 @@ export async function processOneHourDeadlineEmails(now = new Date()) {
               { label: "Due today", value: otherTodayTasks.length + 1 },
               { label: "Due tomorrow", value: dueTomorrowTasks.length },
             ],
+            visualStatsPosition: "bottom",
             imageUrl: ONE_HOUR_GIF,
             imageAlt: "Deadline reminder",
             imagePosition: "bottom",
