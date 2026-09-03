@@ -22,27 +22,59 @@ export function emailLayout(input: {
   intro?: string;
   imageUrl?: string;
   imageAlt?: string;
+  topSection?: { title: string; items: string[] };
+  visualStats?: Array<{ label: string; value: number }>;
   sections?: Array<{ title: string; items: string[] }>;
   ctaLabel?: string;
   ctaUrl?: string;
 }) {
+  const renderItems = (items: string[]) => items
+    .map(
+      (item) => `<div style="padding:10px 12px;margin:6px 0;background:#F7F1E8;border:1px solid #E7DBC8;border-radius:10px;color:#2B2119;font-size:14px;line-height:1.45">${escapeHtml(item)}</div>`,
+    )
+    .join("");
+
+  const topSection = input.topSection && input.topSection.items.length > 0
+    ? `<div style="margin-top:22px">
+        <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8B7B68;font-weight:700;margin-bottom:8px">${escapeHtml(input.topSection.title)}</div>
+        ${renderItems(input.topSection.items)}
+      </div>`
+    : "";
+
+  const stats = input.visualStats && input.visualStats.length > 0
+    ? (() => {
+        const max = Math.max(...input.visualStats.map((stat) => stat.value), 1);
+        return `<div style="margin-top:24px;padding:16px;background:#FFF9F4;border:1px solid #E7DBC8;border-radius:16px">
+          <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8B7B68;font-weight:700;margin-bottom:12px">Your workload</div>
+          ${input.visualStats.map((stat) => {
+            const width = stat.value === 0 ? 0 : Math.max(8, Math.round((stat.value / max) * 100));
+            return `<div style="margin-top:11px">
+              <div style="display:table;width:100%;font-size:12px;line-height:1.4;color:#5E5145;margin-bottom:5px">
+                <span style="display:table-cell">${escapeHtml(stat.label)}</span>
+                <span style="display:table-cell;text-align:right;font-weight:700;color:#2B2119">${stat.value}</span>
+              </div>
+              <div style="height:9px;background:#EFE5D8;border-radius:999px;overflow:hidden">
+                <div style="height:9px;width:${width}%;background:#A8532B;border-radius:999px"></div>
+              </div>
+            </div>`;
+          }).join("")}
+        </div>`;
+      })()
+    : "";
+
   const sections = (input.sections ?? [])
     .filter((section) => section.items.length > 0)
     .map(
       (section) => `
         <div style="margin-top:24px">
           <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8B7B68;font-weight:600;margin-bottom:8px">${escapeHtml(section.title)}</div>
-          ${section.items
-            .map(
-              (item) => `<div style="padding:10px 12px;margin:6px 0;background:#F7F1E8;border:1px solid #E7DBC8;border-radius:10px;color:#2B2119;font-size:14px;line-height:1.45">${escapeHtml(item)}</div>`,
-            )
-            .join("")}
+          ${renderItems(section.items)}
         </div>`,
     )
     .join("");
 
   const image = input.imageUrl
-    ? `<div style="margin-top:20px"><img src="${escapeHtml(input.imageUrl)}" alt="${escapeHtml(input.imageAlt ?? "Ayna morning motivation")}" width="540" style="display:block;width:100%;max-width:540px;height:auto;border:0;border-radius:16px" /></div>`
+    ? `<div style="margin-top:22px"><img src="${escapeHtml(input.imageUrl)}" alt="${escapeHtml(input.imageAlt ?? "Ayna morning motivation")}" width="540" style="display:block;width:100%;max-width:540px;height:auto;border:0;border-radius:16px" /></div>`
     : "";
 
   const cta = input.ctaLabel && input.ctaUrl
@@ -58,6 +90,8 @@ export function emailLayout(input: {
           ${input.eyebrow ? `<div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8B7B68;font-weight:600;margin-bottom:8px">${escapeHtml(input.eyebrow)}</div>` : ""}
           <h1 style="font-family:Georgia,serif;font-size:25px;line-height:1.25;margin:0 0 10px;color:#2B2119">${escapeHtml(input.title)}</h1>
           ${input.intro ? `<p style="font-size:14px;line-height:1.6;color:#6F6253;margin:0">${escapeHtml(input.intro)}</p>` : ""}
+          ${topSection}
+          ${stats}
           ${image}
           ${sections}
           ${cta}
