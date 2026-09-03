@@ -21,8 +21,7 @@ let repairPromise: Promise<void> | null = null;
 export async function ensureSep3AppTaskProjectMapping() {
   if (!repairPromise) {
     repairPromise = runRepair().catch((error) => {
-      repairPromise = null;
-      throw error;
+      console.error("Sep 3 App Updates task repair failed", error);
     });
   }
   await repairPromise;
@@ -40,10 +39,11 @@ async function runRepair() {
   });
 
   try {
+    const seedTaskId = SEP3_APP_TASK_IDS[0];
     const taskRows = await sql`
       SELECT workspace_id
       FROM tasks
-      WHERE id = ANY(${sql.array([...SEP3_APP_TASK_IDS])})
+      WHERE id = ${seedTaskId}
       LIMIT 1
     `;
     const workspaceId = taskRows[0]?.workspace_id;
@@ -54,20 +54,21 @@ async function runRepair() {
       FROM projects
       WHERE workspace_id = ${workspaceId}
         AND archived_at IS NULL
-        AND status NOT IN ('completed'::project_status, 'cancelled'::project_status)
         AND LOWER(name) = 'app updates'
       LIMIT 1
     `;
     const appProject = projectRows[0];
     if (!appProject) return;
 
-    await sql`
-      UPDATE tasks
-      SET project_id = ${appProject.id}, updated_at = NOW()
-      WHERE id = ANY(${sql.array([...SEP3_APP_TASK_IDS])})
-        AND workspace_id = ${workspaceId}
-        AND project_id IS DISTINCT FROM ${appProject.id}
-    `;
+    for (const taskId of SEP3_APP_TASK_IDS) {
+      await sql`
+        UPDATE tasks
+        SET project_id = ${appProject.id}, updated_at = NOW()
+        WHERE id = ${taskId}
+          AND workspace_id = ${workspaceId}
+          AND project_id IS DISTINCT FROM ${appProject.id}
+      `;
+    }
   } finally {
     await sql.end({ timeout: 5 });
   }
