@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import {
   Archive,
+  ArrowLeft,
   BarChart3,
   CalendarDays,
   ChevronLeft,
@@ -53,12 +55,29 @@ export function ShellClient({
   people: PersonOption[];
   shellData: { unread: ShellNotification[]; unreadCount: number; myWorkCount: number; overdueCount: number };
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [previousPath, setPreviousPath] = useState<string | null>(null);
 
   useEffect(() => {
     setCollapsed(window.localStorage.getItem("ayna-sidebar-collapsed") === "true");
   }, []);
+
+  useEffect(() => {
+    const currentPath = window.sessionStorage.getItem("ayna-current-path");
+    const storedPrevious = window.sessionStorage.getItem("ayna-previous-path");
+
+    if (currentPath && currentPath !== pathname) {
+      setPreviousPath(currentPath);
+      window.sessionStorage.setItem("ayna-previous-path", currentPath);
+    } else if (storedPrevious && storedPrevious !== pathname) {
+      setPreviousPath(storedPrevious);
+    }
+
+    window.sessionStorage.setItem("ayna-current-path", pathname);
+  }, [pathname]);
 
   function toggleCollapsed() {
     setCollapsed((value) => {
@@ -66,6 +85,26 @@ export function ShellClient({
       window.localStorage.setItem("ayna-sidebar-collapsed", String(next));
       return next;
     });
+  }
+
+  function goBack() {
+    if (previousPath && previousPath !== pathname) {
+      router.push(previousPath);
+      return;
+    }
+    if (pathname.startsWith("/projects/")) {
+      router.push("/projects");
+      return;
+    }
+    if (pathname.startsWith("/tasks/")) {
+      router.push("/tasks");
+      return;
+    }
+    if (pathname.startsWith("/trackers/")) {
+      router.push("/trackers");
+      return;
+    }
+    router.push("/");
   }
 
   // Keep the everyday navigation intentionally short. Advanced planning views
@@ -128,15 +167,26 @@ export function ShellClient({
       )}
 
       <div className="min-w-0 flex-1">
-        <header className="h-16 sticky top-0 z-30 bg-page/90 backdrop-blur-md border-b border-border/60 flex items-center gap-3 px-4 sm:px-6 lg:px-8">
+        <header className="h-16 sticky top-0 z-30 bg-page/90 backdrop-blur-md border-b border-border/60 flex items-center gap-2 sm:gap-3 px-4 sm:px-6 lg:px-8">
           <button onClick={() => setMobileOpen(true)} className="md:hidden p-2 rounded-xl hover:bg-surface" aria-label="Open menu"><Menu size={19} /></button>
+          {pathname !== "/" && (
+            <button
+              type="button"
+              onClick={goBack}
+              className="group inline-flex h-9 items-center gap-1.5 rounded-xl border border-border bg-surface px-2.5 text-xs font-medium text-text-secondary transition-all duration-200 hover:-translate-x-0.5 hover:border-border-strong hover:text-text-primary"
+              aria-label="Go back"
+            >
+              <ArrowLeft size={15} className="transition-transform duration-200 group-hover:-translate-x-0.5" />
+              <span className="hidden sm:inline">Back</span>
+            </button>
+          )}
           <div className="flex-1 flex justify-center sm:justify-start"><GlobalSearch /></div>
           <NotificationBell items={shellData.unread} count={shellData.unreadCount} />
           <QuickAddTask currentUserId={currentUser.id} people={people} />
         </header>
 
         <main className="px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <div className="max-w-[1400px] mx-auto">{children}</div>
+          <div key={pathname} className="max-w-[1400px] mx-auto animate-page-enter">{children}</div>
         </main>
       </div>
     </div>
@@ -154,11 +204,11 @@ function NavGroup({ items, active, collapsed, onNavigate }: { items: NavItem[]; 
             href={item.href}
             onClick={onNavigate}
             title={collapsed ? item.label : undefined}
-            className={`group flex items-center ${collapsed ? "justify-center px-2" : "gap-2.5 px-2.5"} min-h-10 rounded-xl text-sm transition-colors ${
+            className={`group flex items-center ${collapsed ? "justify-center px-2" : "gap-2.5 px-2.5"} min-h-10 rounded-xl text-sm transition-all duration-200 ${
               selected ? "bg-accent-soft text-accent-text font-semibold" : "text-text-secondary hover:bg-surface-sunk/70 hover:text-text-primary"
-            }`}
+            } ${item.label === "Projects" && !selected ? "hover:translate-x-0.5" : ""}`}
           >
-            <item.icon size={16} className="shrink-0" />
+            <item.icon size={16} className={`shrink-0 transition-transform duration-200 ${item.label === "Projects" ? "group-hover:scale-110" : ""}`} />
             {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
             {!collapsed && item.count ? (
               <span className={`text-[10px] min-w-5 h-5 px-1 rounded-full flex items-center justify-center ${selected ? "bg-surface text-accent-text" : "bg-surface-sunk text-text-muted"}`}>
