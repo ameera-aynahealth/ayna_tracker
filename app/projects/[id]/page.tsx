@@ -3,7 +3,7 @@ import { CalendarDays, CircleAlert, UserRound } from "lucide-react";
 import { getOrCreateCurrentUser } from "@/lib/auth";
 import { ensureBestVersionMasterList } from "@/lib/best-version-bootstrap";
 import { ensureRecentMeetingEventTasks } from "@/lib/recent-meeting-event-bootstrap";
-import { getActiveUsers, getProjectWithTasks } from "@/lib/queries";
+import { getActiveUsers, getMyWorkBuckets, getProjectWithTasks } from "@/lib/queries";
 import { AppShell } from "@/components/app-shell";
 import { ProjectTaskWorkspace } from "@/components/project-task-workspace";
 import { QuickAddTask } from "@/components/quick-add-task";
@@ -18,9 +18,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   await ensureBestVersionMasterList(id);
   await ensureRecentMeetingEventTasks(id);
 
-  const [data, people] = await Promise.all([getProjectWithTasks(id), getActiveUsers()]);
+  const [data, people, myWork] = await Promise.all([
+    getProjectWithTasks(id),
+    getActiveUsers(),
+    getMyWorkBuckets(user.id),
+  ]);
   if (!data) notFound();
   const { project, tasks } = data;
+  const myTaskIds = new Set(myWork.all.filter((task) => task.projectId === id).map((task) => task.id));
 
   const done = tasks.filter((task) => task.status === "completed").length;
   const overdue = tasks.filter((task) => task.dueAt && task.dueAt < new Date() && !["completed", "cancelled"].includes(task.status)).length;
@@ -100,6 +105,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
       <ProjectTaskWorkspace
         tasks={serialized}
+        myTaskIds={[...myTaskIds]}
         people={people.map((person) => ({ id: person.id, name: person.name }))}
         project={{ id: project.id, name: project.name }}
       />
