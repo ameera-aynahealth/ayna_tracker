@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState, useTransition } from "react";
-import { CheckCircle2, Circle, ExternalLink, Link2, Save } from "lucide-react";
+import { CheckCircle2, Circle, ExternalLink, Link2, Save, UsersRound } from "lucide-react";
 import { formatDueBadge } from "@/lib/format";
 import {
   addAttachmentLink,
@@ -9,6 +9,7 @@ import {
   addSubtask,
   requestTaskReview,
   resolveTaskReview,
+  setTaskAssignees,
   toggleSubtask,
   updateTaskField,
   updateTaskStatus,
@@ -19,6 +20,7 @@ type Comment = { id: string; body: string; createdAt: Date; user: { name: string
 type Activity = { id: string; action: string; field: string | null; oldValue: string | null; newValue: string | null; createdAt: Date; user: { name: string } };
 type Attachment = { id: string; name: string; url: string; kind: string; createdAt: Date };
 type Person = { id: string; name: string };
+type PersonLink = { user: Person };
 type Project = { id: string; name: string };
 
 type TaskDetail = {
@@ -37,6 +39,8 @@ type TaskDetail = {
   project: Project | null;
   owner: Person | null;
   reviewer: Person | null;
+  collaborators: PersonLink[];
+  reviewers: PersonLink[];
   subtasks: Subtask[];
   comments: Comment[];
   activity: Activity[];
@@ -75,19 +79,23 @@ export function TaskDetailPanel({
   people: Person[];
   projects: Project[];
 }) {
+  const initialAssigneeIds = uniqueIds([task.owner?.id, ...task.collaborators.map((row) => row.user.id)]);
+  const initialReviewerIds = uniqueIds([task.reviewerId, ...task.reviewers.map((row) => row.user.id)]);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState(task.status);
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? "");
   const [priority, setPriority] = useState(task.priority);
-  const [ownerId, setOwnerId] = useState(task.owner?.id ?? "");
+  const [assigneeIds, setAssigneeIds] = useState<string[]>(initialAssigneeIds);
+  const [savedAssigneeIds, setSavedAssigneeIds] = useState<string[]>(initialAssigneeIds);
   const [projectId, setProjectId] = useState(task.project?.id ?? "");
   const [dueAt, setDueAt] = useState(toLocalInput(task.dueAt));
   const [waitingOnName, setWaitingOnName] = useState(task.waitingOnName ?? "");
   const [waitingOnOrg, setWaitingOnOrg] = useState(task.waitingOnOrg ?? "");
   const [followupAt, setFollowupAt] = useState(toLocalInput(task.followupAt));
   const [blockedReason, setBlockedReason] = useState(task.blockedReason ?? "");
-  const [reviewerId, setReviewerId] = useState(task.reviewerId ?? "");
+  const [reviewerIds, setReviewerIds] = useState<string[]>(initialReviewerIds);
+  const [activeReviewerIds, setActiveReviewerIds] = useState<string[]>(initialReviewerIds);
   const [newSubtask, setNewSubtask] = useState("");
   const [newComment, setNewComment] = useState("");
   const [linkName, setLinkName] = useState("");
@@ -129,7 +137,10 @@ export function TaskDetailPanel({
         if (title.trim() !== task.title) await updateTaskField({ taskId: task.id, field: "title", value: title.trim() });
         if (description !== (task.description ?? "")) await updateTaskField({ taskId: task.id, field: "description", value: description || null });
         if (priority !== task.priority) await updateTaskField({ taskId: task.id, field: "priority", value: priority });
-        if (ownerId !== (task.owner?.id ?? "")) await updateTaskField({ taskId: task.id, field: "ownerId", value: ownerId || null });
+        if (!sameIdSet(assigneeIds, savedAssigneeIds)) {
+          await setTaskAssignees(task.id, assigneeIds);
+          setSavedAssigneeIds(assigneeIds);
+        }
         if (projectId !== (task.project?.id ?? "")) await updateTaskField({ taskId: task.id, field: "projectId", value: projectId || null });
         const originalDue = task.dueAt ? toLocalInput(task.dueAt) : "";
         if (dueAt !== originalDue) await updateTaskField({ taskId: task.id, field: "dueAt", value: dueAt ? new Date(dueAt).toISOString() : null });
@@ -167,12 +178,20 @@ export function TaskDetailPanel({
   }
 
   function requestReview() {
-    if (!reviewerId) return;
+    if (!reviewerIds.length) return;
     setStatus("needs_review");
-    startTransition(async () => { await requestTaskReview(task.id, reviewerId); flash("Review requested"); });
+    startTransition(async () => {
+      try {
+        await requestTaskReview(task.id, reviewerIds);
+        setActiveReviewerIds(reviewerIds);
+        flash("Review requested");
+      } catch {
+        flash("Could not request review");
+      }
+    });
   }
 
-  const canResolveReview = status === "needs_review" && (task.reviewerId === currentUser.id || currentUser.role === "admin");
+  const canResolveReview = status === "needs_review" && (activeReviewerIds.includes(currentUser.id) || currentUser.role === "admin");
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -183,6 +202,7 @@ export function TaskDetailPanel({
           <div className="flex items-center gap-2 mt-3 flex-wrap">
             <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${badgeToneClasses[tone]}`}>{label}</span>
             {priority === "urgent" && <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-brick-soft text-brick-text">Urgent</span>}
+            {assigneeIds.length > 1 && <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-accent-soft text-accent-text">{assigneeIds.length} assignees</span>}
             {isPending && <span className="text-xs text-text-muted">Saving</span>}
             {savedMessage && <span className="text-xs font-semibold text-sage-text">{savedMessage}</span>}
           </div>
@@ -260,15 +280,18 @@ export function TaskDetailPanel({
           <section className="border border-border bg-surface p-4 rounded-2xl space-y-4">
             <Property label="Status"><select value={status} onChange={(event) => changeStatus(event.target.value)} className="property-select">{STATUS_OPTIONS.map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></Property>
             <Property label="Priority"><select value={priority} onChange={(event) => setPriority(event.target.value)} className="property-select"><option value="urgent">Urgent</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></Property>
-            <Property label="Owner"><select value={ownerId} onChange={(event) => setOwnerId(event.target.value)} className="property-select"><option value="">Unassigned</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></Property>
+            <Property label="Assignees">
+              <MultiPersonPicker people={people} selectedIds={assigneeIds} onChange={setAssigneeIds} emptyLabel="Unassigned" />
+            </Property>
             <Property label="Project"><select value={projectId} onChange={(event) => setProjectId(event.target.value)} className="property-select"><option value="">No project</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></Property>
             <Property label="Due"><input type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} className="property-select" /></Property>
           </section>
 
           <section className="border border-border bg-surface p-4 rounded-2xl">
-            <div className="text-xs uppercase tracking-[0.1em] font-semibold text-text-muted mb-3">Review</div>
-            <select value={reviewerId} onChange={(event) => setReviewerId(event.target.value)} className="property-select mb-2"><option value="">Choose reviewer</option>{people.filter((person) => person.id !== ownerId).map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select>
-            <button onClick={requestReview} disabled={!reviewerId || isPending} className="w-full border border-border rounded-xl px-3 py-2 text-xs font-semibold disabled:opacity-50">Request review</button>
+            <div className="text-xs uppercase tracking-[0.1em] font-semibold text-text-muted mb-3">Reviewers</div>
+            <MultiPersonPicker people={people} selectedIds={reviewerIds} onChange={setReviewerIds} emptyLabel="Choose reviewers" />
+            <button onClick={requestReview} disabled={!reviewerIds.length || isPending} className="w-full border border-border rounded-xl px-3 py-2 text-xs font-semibold disabled:opacity-50 mt-2">Request review</button>
+            {activeReviewerIds.length > 1 && status === "needs_review" && <div className="text-[10px] text-text-muted mt-2">Any selected reviewer can approve or request changes.</div>}
             {canResolveReview && <div className="grid grid-cols-2 gap-2 mt-2"><button onClick={() => startTransition(async () => { await resolveTaskReview(task.id, "approve"); setStatus("completed"); })} className="bg-sage-soft text-sage-text rounded-xl px-2 py-2 text-xs font-semibold">Approve</button><button onClick={() => startTransition(async () => { await resolveTaskReview(task.id, "changes"); setStatus("in_progress"); })} className="bg-gold-soft text-gold-text rounded-xl px-2 py-2 text-xs font-semibold">Request changes</button></div>}
           </section>
         </aside>
@@ -286,7 +309,50 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function Property({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="block"><span className="text-[10px] uppercase tracking-[0.09em] text-text-muted font-semibold block mb-1.5">{label}</span>{children}</label>;
+  return <div className="block"><span className="text-[10px] uppercase tracking-[0.09em] text-text-muted font-semibold block mb-1.5">{label}</span>{children}</div>;
+}
+
+function MultiPersonPicker({
+  people,
+  selectedIds,
+  onChange,
+  emptyLabel,
+}: {
+  people: Person[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+  emptyLabel: string;
+}) {
+  function toggle(personId: string) {
+    onChange(
+      selectedIds.includes(personId)
+        ? selectedIds.filter((id) => id !== personId)
+        : [...selectedIds, personId]
+    );
+  }
+
+  return (
+    <div className="border border-border rounded-xl overflow-hidden bg-surface">
+      <div className="flex items-center gap-2 px-2.5 py-2 border-b border-border bg-page text-xs text-text-muted">
+        <UsersRound size={13} />
+        <span>{selectedIds.length ? `${selectedIds.length} selected` : emptyLabel}</span>
+      </div>
+      <div className="max-h-36 overflow-y-auto p-1">
+        {people.map((person) => (
+          <label key={person.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs cursor-pointer hover:bg-page">
+            <input
+              type="checkbox"
+              checked={selectedIds.includes(person.id)}
+              onChange={() => toggle(person.id)}
+              className="h-3.5 w-3.5 rounded border-border accent-accent"
+            />
+            <span className="truncate">{person.name}</span>
+          </label>
+        ))}
+        {people.length === 0 && <div className="px-2 py-2 text-xs text-text-muted">No active teammates.</div>}
+      </div>
+    </div>
+  );
 }
 
 function describeActivity(activity: Activity) {
@@ -298,6 +364,7 @@ function describeActivity(activity: Activity) {
   if (activity.action === "review_requested") return "requested a review";
   if (activity.action === "review_approved") return "approved the review";
   if (activity.action === "changes_requested") return "requested changes";
+  if (activity.action === "assignees_changed") return "updated the assignees";
   return humanize(activity.action).toLowerCase();
 }
 
@@ -310,6 +377,16 @@ function toLocalInput(value: Date | null) {
   const date = new Date(value);
   const offset = date.getTimezoneOffset();
   return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 16);
+}
+
+function uniqueIds(ids: Array<string | null | undefined>) {
+  return [...new Set(ids.filter((id): id is string => Boolean(id)))];
+}
+
+function sameIdSet(left: string[], right: string[]) {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((id) => rightSet.has(id));
 }
 
 function SubtaskRow({ subtask, taskId }: { subtask: Subtask; taskId: string }) {
