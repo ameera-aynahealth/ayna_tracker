@@ -17,7 +17,9 @@ export type TeamStatusEmailKind =
   | "due_changed"
   | "cancelled"
   | "owner_changed"
-  | "reviewer_changed";
+  | "reviewer_changed"
+  | "milestone_created"
+  | "milestone_completed";
 
 function appUrl(path: string) {
   const base = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
@@ -26,24 +28,17 @@ function appUrl(path: string) {
 
 function copyFor(kind: TeamStatusEmailKind, actorName: string, taskTitle: string) {
   switch (kind) {
-    case "completed":
-      return { eyebrow: "Task completed", title: `${actorName} completed ${taskTitle}`, subject: `Task completed: ${taskTitle}` };
-    case "blocked":
-      return { eyebrow: "Task blocked", title: `${actorName} marked a task as blocked`, subject: `Task blocked: ${taskTitle}` };
-    case "unblocked":
-      return { eyebrow: "Task unblocked", title: `${taskTitle} is unblocked`, subject: `Task unblocked: ${taskTitle}` };
-    case "urgent":
-      return { eyebrow: "Priority update", title: `${actorName} changed a task to urgent`, subject: `Urgent: ${taskTitle}` };
-    case "due_earlier":
-      return { eyebrow: "Deadline moved earlier", title: `${actorName} moved a deadline earlier`, subject: `Deadline moved earlier: ${taskTitle}` };
-    case "due_changed":
-      return { eyebrow: "Deadline changed", title: `${actorName} changed a task deadline`, subject: `Deadline changed: ${taskTitle}` };
-    case "cancelled":
-      return { eyebrow: "Task cancelled", title: `${actorName} cancelled ${taskTitle}`, subject: `Task cancelled: ${taskTitle}` };
-    case "owner_changed":
-      return { eyebrow: "Owner changed", title: `${actorName} changed the task owner`, subject: `Owner changed: ${taskTitle}` };
-    case "reviewer_changed":
-      return { eyebrow: "Reviewer changed", title: `${actorName} changed the reviewer`, subject: `Reviewer changed: ${taskTitle}` };
+    case "completed": return { eyebrow: "Task completed", title: `${actorName} completed ${taskTitle}`, subject: `Task completed: ${taskTitle}` };
+    case "blocked": return { eyebrow: "Task blocked", title: `${actorName} marked a task as blocked`, subject: `Task blocked: ${taskTitle}` };
+    case "unblocked": return { eyebrow: "Task unblocked", title: `${taskTitle} is unblocked`, subject: `Task unblocked: ${taskTitle}` };
+    case "urgent": return { eyebrow: "Priority update", title: `${actorName} changed a task to urgent`, subject: `Urgent: ${taskTitle}` };
+    case "due_earlier": return { eyebrow: "Deadline moved earlier", title: `${actorName} moved a deadline earlier`, subject: `Deadline moved earlier: ${taskTitle}` };
+    case "due_changed": return { eyebrow: "Deadline changed", title: `${actorName} changed a task deadline`, subject: `Deadline changed: ${taskTitle}` };
+    case "cancelled": return { eyebrow: "Task cancelled", title: `${actorName} cancelled ${taskTitle}`, subject: `Task cancelled: ${taskTitle}` };
+    case "owner_changed": return { eyebrow: "Owner changed", title: `${actorName} changed the task owner`, subject: `Owner changed: ${taskTitle}` };
+    case "reviewer_changed": return { eyebrow: "Reviewer changed", title: `${actorName} changed the reviewer`, subject: `Reviewer changed: ${taskTitle}` };
+    case "milestone_created": return { eyebrow: "New milestone", title: `${actorName} created a new milestone`, subject: `New milestone: ${taskTitle}` };
+    case "milestone_completed": return { eyebrow: "Milestone completed", title: `${actorName} completed a milestone`, subject: `Milestone completed: ${taskTitle}` };
   }
 }
 
@@ -55,10 +50,7 @@ export async function sendTeamStatusEmail(input: {
   extraItems?: string[];
 }) {
   try {
-    const teammates = await db.query.users.findMany({
-      where: and(eq(users.workspaceId, input.workspaceId), eq(users.active, true)),
-    });
-
+    const teammates = await db.query.users.findMany({ where: and(eq(users.workspaceId, input.workspaceId), eq(users.active, true)) });
     await Promise.all(teammates.filter((user) => Boolean(user.email)).map(async (recipient) => {
       const timezone = recipient.timezone || "America/New_York";
       const copy = copyFor(input.kind, input.actorName, input.task.title);
