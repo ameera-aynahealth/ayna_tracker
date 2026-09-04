@@ -32,7 +32,14 @@ async function sendActivityEmail(entry: {
     ]);
     if (!task || !actor) return;
 
-    const taskInfo = { id: task.id, title: task.title, dueAt: task.dueAt, priority: task.priority };
+    const taskInfo = {
+      id: task.id,
+      title: task.title,
+      dueAt: task.dueAt,
+      priority: task.priority,
+      projectId: task.projectId,
+      ownerId: task.ownerId,
+    };
 
     if (entry.action === "commented") {
       await sendCommentActivityEmails({
