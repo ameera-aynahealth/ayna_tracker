@@ -9,6 +9,8 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { formatInTimeZone } from "date-fns-tz";
 import { nanoid } from "nanoid";
 
+const BATCH_THREE_GIF = "https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3ejd2Y2thcHRrb3F4eDVqYnF0bG5hbWZmOTFpbHhvMDJxaHdiM2gwaCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/06fgUXAYzlUsTU2LKS/giphy.gif";
+
 const OPEN_STATUSES = OPEN_STATUS_LIST as unknown as Array<
   "backlog" | "not_started" | "in_progress" | "waiting" | "blocked" | "needs_review"
 >;
@@ -41,6 +43,10 @@ async function finishDelivery(deliveryId: string, success: boolean, providerMess
 
 function taskName(task: { title: string; project?: { name: string } | null }) {
   return task.project?.name ? `${task.title} — ${task.project.name}` : task.title;
+}
+
+function uniqueTasks<T extends { id: string }>(items: T[]) {
+  return [...new Map(items.map((item) => [item.id, item])).values()];
 }
 
 export async function processScheduledTeamEmails(now = new Date()) {
@@ -79,11 +85,11 @@ export async function processScheduledTeamEmails(now = new Date()) {
         try {
           const result = await sendTrackerEmail({
             to: user.email,
-            subject: "ayna team weekly recap",
+            subject: "ayna weekly team recap",
             html: emailLayout({
-              eyebrow: "Monday team recap",
+              eyebrow: "MONDAY TEAM RECAP",
               title: "HERE'S WHAT THE TEAM HAS GOING ON THIS WEEK",
-              intro: `${completedThisWeek.length} completed in the last 7 days. ${openTasks.length} open across the team.`,
+              intro: "Quick rundown so everyone knows what's happening across ayna.",
               visualStats: [
                 { label: "Completed last 7 days", value: completedThisWeek.length },
                 { label: "Due this week", value: dueThisWeek.length },
@@ -94,9 +100,13 @@ export async function processScheduledTeamEmails(now = new Date()) {
               sections: [
                 { title: "Due this week", items: dueThisWeek.slice(0, 12).map(taskName) },
                 { title: "Overdue", items: overdue.slice(0, 10).map(taskName) },
+                { title: "Urgent", items: urgent.slice(0, 10).map(taskName) },
                 { title: "Blocked", items: blocked.slice(0, 8).map(taskName) },
                 { title: "Recently completed", items: completedThisWeek.slice(0, 10).map(taskName) },
               ],
+              imageUrl: BATCH_THREE_GIF,
+              imageAlt: "Ayna weekly team recap",
+              imagePosition: "bottom",
               ctaLabel: "Open tracker",
               ctaUrl: appUrl("/tasks"),
             }),
@@ -114,7 +124,11 @@ export async function processScheduledTeamEmails(now = new Date()) {
     if (user.dailyDigest && localHour === 17) {
       const buckets = await getMyWorkBuckets(user.id);
       const urgent = buckets.all.filter((task) => task.priority === "urgent");
-      const unfinishedImportant = [...buckets.overdue, ...urgent.filter((task) => !buckets.overdue.some((item) => item.id === task.id))];
+      const unfinishedImportant = uniqueTasks([
+        ...buckets.overdue,
+        ...buckets.dueToday,
+        ...urgent,
+      ]);
       if (unfinishedImportant.length === 0) continue;
 
       const deliveryId = await claimDelivery(`eod:${user.id}:${localDay}`, user.id, user.email, "daily_digest");
@@ -125,11 +139,12 @@ export async function processScheduledTeamEmails(now = new Date()) {
           to: user.email,
           subject: "Before you log off: unfinished ayna tasks",
           html: emailLayout({
-            eyebrow: "End-of-day check",
+            eyebrow: "END-OF-DAY CHECK",
             title: "BADDIE BEFORE U LOG OFF",
-            intro: `You still have ${unfinishedImportant.length} urgent or overdue ${unfinishedImportant.length === 1 ? "task" : "tasks"} that need attention.`,
+            intro: `You still have ${unfinishedImportant.length} urgent, overdue, or due-today ${unfinishedImportant.length === 1 ? "task" : "tasks"} that need attention.`,
             visualStats: [
               { label: "Overdue", value: buckets.overdue.length },
+              { label: "Due today", value: buckets.dueToday.length },
               { label: "Urgent", value: urgent.length },
               { label: "Due tomorrow", value: buckets.dueTomorrow.length },
               { label: "Blocked / waiting", value: buckets.blocked.length + buckets.waiting.length },
@@ -138,6 +153,9 @@ export async function processScheduledTeamEmails(now = new Date()) {
               { title: "Handle these first", items: unfinishedImportant.slice(0, 12).map(taskName) },
               { title: "Due tomorrow", items: buckets.dueTomorrow.slice(0, 8).map(taskName) },
             ],
+            imageUrl: BATCH_THREE_GIF,
+            imageAlt: "Ayna end-of-day recap",
+            imagePosition: "bottom",
             ctaLabel: "Open my tasks",
             ctaUrl: appUrl("/my-work"),
           }),
