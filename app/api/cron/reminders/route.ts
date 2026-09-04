@@ -1,5 +1,6 @@
 import { processOneHourDeadlineEmails } from "@/lib/one-hour-reminders";
 import { processReminderCycle } from "@/lib/reminders";
+import { processScheduledTeamEmails } from "@/lib/scheduled-team-emails";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,9 +14,10 @@ export async function GET(request: Request) {
   }
 
   const startedAt = Date.now();
-  const [dailyOutcome, oneHourOutcome] = await Promise.allSettled([
+  const [dailyOutcome, oneHourOutcome, scheduledTeamOutcome] = await Promise.allSettled([
     processReminderCycle(),
     processOneHourDeadlineEmails(),
+    processScheduledTeamEmails(),
   ]);
 
   const dailyResult = dailyOutcome.status === "fulfilled"
@@ -26,21 +28,26 @@ export async function GET(request: Request) {
     ? oneHourOutcome.value
     : { oneHourReminderError: oneHourOutcome.reason instanceof Error ? oneHourOutcome.reason.message : "Unknown one-hour reminder error" };
 
-  const success = dailyOutcome.status === "fulfilled" || oneHourOutcome.status === "fulfilled";
+  const scheduledTeamResult = scheduledTeamOutcome.status === "fulfilled"
+    ? scheduledTeamOutcome.value
+    : { scheduledTeamEmailError: scheduledTeamOutcome.reason instanceof Error ? scheduledTeamOutcome.reason.message : "Unknown scheduled team email error" };
+
+  const success = dailyOutcome.status === "fulfilled" || oneHourOutcome.status === "fulfilled" || scheduledTeamOutcome.status === "fulfilled";
 
   console.info("[cron:reminders]", {
     success,
     ...dailyResult,
     ...oneHourResult,
+    ...scheduledTeamResult,
     durationMs: Date.now() - startedAt,
   });
 
   if (!success) {
-    console.error("[cron:reminders:error]", { ...dailyResult, ...oneHourResult });
+    console.error("[cron:reminders:error]", { ...dailyResult, ...oneHourResult, ...scheduledTeamResult });
   }
 
   return Response.json(
-    { success, ...dailyResult, ...oneHourResult },
+    { success, ...dailyResult, ...oneHourResult, ...scheduledTeamResult },
     { status: success ? 200 : 500 },
   );
 }
