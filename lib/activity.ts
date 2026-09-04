@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { activityLogs, taskCollaborators, tasks, users } from "@/db/schema";
 import { sendTaskActionEmail } from "@/lib/task-action-emails";
 import { sendTeamStatusEmail } from "@/lib/team-status-emails";
+import { sendCommentActivityEmails } from "@/lib/comment-emails";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
@@ -32,6 +33,14 @@ async function sendActivityEmail(entry: {
     if (!task || !actor) return;
 
     const taskInfo = { id: task.id, title: task.title, dueAt: task.dueAt, priority: task.priority };
+
+    if (entry.action === "commented") {
+      await sendCommentActivityEmails({
+        task: { id: task.id, title: task.title, ownerId: task.ownerId, workspaceId: task.workspaceId },
+        actor: { id: actor.id, name: actor.name },
+      });
+      return;
+    }
 
     if (entry.action === "created") {
       if (task.taskType === "milestone") {
