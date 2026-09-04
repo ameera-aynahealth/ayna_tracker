@@ -6,6 +6,8 @@ import { emailLayout, sendTrackerEmail } from "@/lib/email";
 import { and, eq } from "drizzle-orm";
 import { formatInTimeZone } from "date-fns-tz";
 
+const BATCH_TWO_GIF = "https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3cXd2MHdnYWpnZXByNTZybHF5bGp1NWxpMnFxdWNqemJ1ODJnZ2RlMyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/4OEahYt7CTRUmqlDkm/giphy.gif";
+
 export type TeamStatusEmailKind =
   | "completed"
   | "blocked"
@@ -75,6 +77,9 @@ export async function sendTeamStatusEmail(input: {
           title: copy.title,
           intro: input.task.title,
           sections: [{ title: "Update", items: details }],
+          imageUrl: BATCH_TWO_GIF,
+          imageAlt: "Ayna team status update",
+          imagePosition: "bottom",
           ctaLabel: "View task",
           ctaUrl: appUrl(`/tasks/${input.task.id}`),
         }),
