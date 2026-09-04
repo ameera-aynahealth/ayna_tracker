@@ -1,12 +1,13 @@
 import "server-only";
 
 import { db } from "@/db";
-import { users } from "@/db/schema";
+import { projects, users } from "@/db/schema";
 import { emailLayout, sendTrackerEmail } from "@/lib/email";
 import { and, eq } from "drizzle-orm";
 import { formatInTimeZone } from "date-fns-tz";
 
 const BATCH_TWO_GIF = "https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3cXd2MHdnYWpnZXByNTZybHF5bGp1NWxpMnFxdWNqemJ1ODJnZ2RlMyZlcD12MV9naWZzX3NlYXJjaCZjdD1n/4OEahYt7CTRUmqlDkm/giphy.gif";
+const BATCH_THREE_GIF = "https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3ejd2Y2thcHRrb3F4eDVqYnF0bG5hbWZmOTFpbHhvMDJxaHdiM2gwaCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/06fgUXAYzlUsTU2LKS/giphy.gif";
 
 export type TeamStatusEmailKind =
   | "completed"
@@ -26,6 +27,10 @@ function appUrl(path: string) {
   return `${base}${path}`;
 }
 
+function isMilestoneKind(kind: TeamStatusEmailKind) {
+  return kind === "milestone_created" || kind === "milestone_completed";
+}
+
 function copyFor(kind: TeamStatusEmailKind, actorName: string, taskTitle: string) {
   switch (kind) {
     case "completed": return { eyebrow: "Task completed", title: `${actorName} completed ${taskTitle}`, subject: `Task completed: ${taskTitle}` };
@@ -37,8 +42,8 @@ function copyFor(kind: TeamStatusEmailKind, actorName: string, taskTitle: string
     case "cancelled": return { eyebrow: "Task cancelled", title: `${actorName} cancelled ${taskTitle}`, subject: `Task cancelled: ${taskTitle}` };
     case "owner_changed": return { eyebrow: "Owner changed", title: `${actorName} changed the task owner`, subject: `Owner changed: ${taskTitle}` };
     case "reviewer_changed": return { eyebrow: "Reviewer changed", title: `${actorName} changed the reviewer`, subject: `Reviewer changed: ${taskTitle}` };
-    case "milestone_created": return { eyebrow: "New milestone", title: `${actorName} created a new milestone`, subject: `New milestone: ${taskTitle}` };
-    case "milestone_completed": return { eyebrow: "Milestone completed", title: `${actorName} completed a milestone`, subject: `Milestone completed: ${taskTitle}` };
+    case "milestone_created": return { eyebrow: "NEW MILESTONE", title: "NEW MILESTONE JUST DROPPED", subject: `New milestone added: ${taskTitle}` };
+    case "milestone_completed": return { eyebrow: "MILESTONE COMPLETED", title: "ANOTHER ONE CHECKED OFF", subject: `Milestone completed: ${taskTitle}` };
   }
 }
 
@@ -46,20 +51,47 @@ export async function sendTeamStatusEmail(input: {
   kind: TeamStatusEmailKind;
   workspaceId: string;
   actorName: string;
-  task: { id: string; title: string; dueAt?: Date | null; priority?: string | null };
+  task: {
+    id: string;
+    title: string;
+    dueAt?: Date | null;
+    priority?: string | null;
+    projectId?: string | null;
+    ownerId?: string | null;
+  };
   extraItems?: string[];
 }) {
   try {
-    const teammates = await db.query.users.findMany({ where: and(eq(users.workspaceId, input.workspaceId), eq(users.active, true)) });
+    const [teammates, project, owner] = await Promise.all([
+      db.query.users.findMany({ where: and(eq(users.workspaceId, input.workspaceId), eq(users.active, true)) }),
+      input.task.projectId ? db.query.projects.findFirst({ where: eq(projects.id, input.task.projectId) }) : Promise.resolve(null),
+      input.task.ownerId ? db.query.users.findFirst({ where: eq(users.id, input.task.ownerId) }) : Promise.resolve(null),
+    ]);
+
+    const milestone = isMilestoneKind(input.kind);
+
     await Promise.all(teammates.filter((user) => Boolean(user.email)).map(async (recipient) => {
       const timezone = recipient.timezone || "America/New_York";
       const copy = copyFor(input.kind, input.actorName, input.task.title);
-      const details = [
-        `Task: ${input.task.title}`,
-        input.task.dueAt ? `Due: ${formatInTimeZone(input.task.dueAt, timezone, "EEE, MMM d 'at' h:mm a zzz")}` : "Due: No due date",
-        input.task.priority ? `Priority: ${input.task.priority.replaceAll("_", " ")}` : null,
-        ...(input.extraItems ?? []),
-      ].filter((item): item is string => Boolean(item));
+      const dueText = input.task.dueAt
+        ? formatInTimeZone(input.task.dueAt, timezone, "EEE, MMM d 'at' h:mm a zzz")
+        : "No due date";
+
+      const details = milestone
+        ? [
+            `Milestone: ${input.task.title}`,
+            `Project: ${project?.name ?? "No project"}`,
+            `Due: ${dueText}`,
+            input.kind === "milestone_completed"
+              ? `Completed by: ${input.actorName}`
+              : `Owner: ${owner?.name ?? "Unassigned"}`,
+          ]
+        : [
+            `Task: ${input.task.title}`,
+            `Due: ${dueText}`,
+            input.task.priority ? `Priority: ${input.task.priority.replaceAll("_", " ")}` : null,
+            ...(input.extraItems ?? []),
+          ].filter((item): item is string => Boolean(item));
 
       await sendTrackerEmail({
         to: recipient.email,
@@ -67,12 +99,16 @@ export async function sendTeamStatusEmail(input: {
         html: emailLayout({
           eyebrow: copy.eyebrow,
           title: copy.title,
-          intro: input.task.title,
-          sections: [{ title: "Update", items: details }],
-          imageUrl: BATCH_TWO_GIF,
-          imageAlt: "Ayna team status update",
+          intro: milestone
+            ? input.kind === "milestone_created"
+              ? `${input.actorName} added a new milestone${project?.name ? ` to ${project.name}` : ""}.`
+              : `${input.actorName} completed ${input.task.title}${project?.name ? ` for ${project.name}` : ""}.`
+            : input.task.title,
+          sections: [{ title: milestone ? "Milestone details" : "Update", items: details }],
+          imageUrl: milestone ? BATCH_THREE_GIF : BATCH_TWO_GIF,
+          imageAlt: milestone ? "Ayna milestone update" : "Ayna team status update",
           imagePosition: "bottom",
-          ctaLabel: "View task",
+          ctaLabel: milestone ? (input.kind === "milestone_created" ? "Open milestone" : "View milestone") : "View task",
           ctaUrl: appUrl(`/tasks/${input.task.id}`),
         }),
       });
