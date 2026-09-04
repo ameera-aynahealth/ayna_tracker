@@ -34,6 +34,9 @@ async function sendActivityEmail(entry: {
     const taskInfo = { id: task.id, title: task.title, dueAt: task.dueAt, priority: task.priority };
 
     if (entry.action === "created") {
+      if (task.taskType === "milestone") {
+        await sendTeamStatusEmail({ kind: "milestone_created", workspaceId: task.workspaceId, actorName: actor.name, task: taskInfo });
+      }
       const collaboratorRows = await db.select({ userId: taskCollaborators.userId })
         .from(taskCollaborators)
         .where(eq(taskCollaborators.taskId, task.id));
@@ -47,9 +50,7 @@ async function sendActivityEmail(entry: {
     if (entry.action === "assignees_changed") {
       const previous = new Set(parseIds(entry.oldValue));
       const added = parseIds(entry.newValue).filter((id) => !previous.has(id) && id !== actor.id);
-      await Promise.all(added.map((recipientId) => sendTaskActionEmail({
-        kind: "assigned", recipientId, actorName: actor.name, task: taskInfo,
-      })));
+      await Promise.all(added.map((recipientId) => sendTaskActionEmail({ kind: "assigned", recipientId, actorName: actor.name, task: taskInfo })));
       return;
     }
 
@@ -71,9 +72,7 @@ async function sendActivityEmail(entry: {
 
     if (entry.action === "review_requested") {
       const reviewerIds = parseIds(entry.newValue).filter((id) => id !== actor.id);
-      await Promise.all(reviewerIds.map((recipientId) => sendTaskActionEmail({
-        kind: "ready_review", recipientId, actorName: actor.name, task: taskInfo,
-      })));
+      await Promise.all(reviewerIds.map((recipientId) => sendTaskActionEmail({ kind: "ready_review", recipientId, actorName: actor.name, task: taskInfo })));
       return;
     }
 
@@ -93,7 +92,12 @@ async function sendActivityEmail(entry: {
 
     if (entry.action === "status_changed") {
       if (entry.newValue === "completed") {
-        await sendTeamStatusEmail({ kind: "completed", workspaceId: task.workspaceId, actorName: actor.name, task: taskInfo });
+        await sendTeamStatusEmail({
+          kind: task.taskType === "milestone" ? "milestone_completed" : "completed",
+          workspaceId: task.workspaceId,
+          actorName: actor.name,
+          task: taskInfo,
+        });
         return;
       }
       if (entry.newValue === "cancelled") {
