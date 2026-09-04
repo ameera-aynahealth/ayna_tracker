@@ -5,7 +5,7 @@ import { comments, taskCollaborators, users } from "@/db/schema";
 import { emailLayout, sendTrackerEmail } from "@/lib/email";
 import { and, desc, eq } from "drizzle-orm";
 
-const BATCH_ONE_GIF = "https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3ZnVpOTN6eHdzM2hva2FscG5rdnVvdnpoenY3dG9oa3JwYmpndnBzciZlcD12MV9naWZzX3NlYXJjaCZjdD1n/Oxo2kvkxh25wKnC85g/giphy.gif";
+const BATCH_FOUR_GIF = "https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3dXNiYjZ4bDlqdTR1Y3ZocnY5eDIybmgzaTh6bGZlbXVvMmw0bmQybSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/3qAVxt4YMsmG7zccOp/giphy.gif";
 
 function appUrl(path: string) {
   const base = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
@@ -28,8 +28,8 @@ async function sendOne(input: {
       title: input.mentioned ? `${input.actorName} mentioned you in a task` : `${input.actorName} commented on your task`,
       intro: input.taskTitle,
       sections: [{ title: "Comment", items: [input.body.slice(0, 500)] }],
-      imageUrl: BATCH_ONE_GIF,
-      imageAlt: "Ayna comment update",
+      imageUrl: BATCH_FOUR_GIF,
+      imageAlt: input.mentioned ? "Ayna mention update" : "Ayna comment update",
       imagePosition: "bottom",
       ctaLabel: "Open task",
       ctaUrl: appUrl(`/tasks/${input.taskId}`),
@@ -54,7 +54,7 @@ export async function sendCommentActivityEmails(input: {
 
     const lowerBody = latestComment.body.toLowerCase();
     const mentioned = members.filter((member) => {
-      if (member.id === input.actor.id) return false;
+      if (member.id === input.actor.id || !member.email) return false;
       const first = member.name.split(" ")[0]?.toLowerCase();
       const full = member.name.toLowerCase();
       return Boolean(first && lowerBody.includes(`@${first}`)) || lowerBody.includes(`@${full}`);
@@ -71,7 +71,7 @@ export async function sendCommentActivityEmails(input: {
 
     const mentionedIds = new Set(mentioned.map((member) => member.id));
     const assigneeIds = [...new Set([input.task.ownerId, ...collaboratorRows.map((row) => row.userId)].filter((id): id is string => Boolean(id)))];
-    const assignees = members.filter((member) => assigneeIds.includes(member.id) && member.id !== input.actor.id && !mentionedIds.has(member.id));
+    const assignees = members.filter((member) => Boolean(member.email) && assigneeIds.includes(member.id) && member.id !== input.actor.id && !mentionedIds.has(member.id));
 
     await Promise.all(assignees.map((member) => sendOne({
       to: member.email,
