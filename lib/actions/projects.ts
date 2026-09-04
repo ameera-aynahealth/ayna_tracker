@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { projects } from "@/db/schema";
 import { requireEditPermission } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { sendProjectEmail } from "@/lib/project-emails";
 import { nanoid } from "nanoid";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -53,6 +54,46 @@ export async function updateProjectStatus(projectId: string, status: string) {
     oldValue: existing.status,
     newValue: status,
   });
+
+  if (status === "completed" && existing.status !== "completed") {
+    await sendProjectEmail({
+      kind: "completed",
+      workspaceId: existing.workspaceId,
+      actorName: user.name,
+      project: { id: existing.id, name: existing.name, dueDate: existing.dueDate },
+    });
+  }
+
+  revalidatePath("/projects");
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function updateProjectDueDate(projectId: string, dueDate: string | null) {
+  const user = await requireEditPermission();
+  const existing = await db.query.projects.findFirst({ where: eq(projects.id, projectId) });
+  if (!existing) throw new Error("Project not found");
+
+  const nextDueDate = dueDate ? new Date(dueDate) : null;
+  if (nextDueDate && Number.isNaN(nextDueDate.getTime())) throw new Error("Invalid project due date");
+
+  await db.update(projects).set({ dueDate: nextDueDate, updatedAt: new Date() }).where(eq(projects.id, projectId));
+  await logActivity({
+    projectId,
+    userId: user.id,
+    action: "dueDate_changed",
+    field: "dueDate",
+    oldValue: existing.dueDate?.toISOString() ?? null,
+    newValue: nextDueDate?.toISOString() ?? null,
+  });
+
+  await sendProjectEmail({
+    kind: "deadline_changed",
+    workspaceId: existing.workspaceId,
+    actorName: user.name,
+    project: { id: existing.id, name: existing.name, dueDate: nextDueDate },
+    previousDueDate: existing.dueDate,
+  });
+
   revalidatePath("/projects");
   revalidatePath(`/projects/${projectId}`);
 }
