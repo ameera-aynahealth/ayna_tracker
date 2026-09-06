@@ -1,6 +1,4 @@
-import { processOneHourDeadlineEmails } from "@/lib/one-hour-reminders";
 import { processReminderCycle } from "@/lib/reminders";
-import { processScheduledTeamEmails } from "@/lib/scheduled-team-emails";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,41 +11,17 @@ export async function GET(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const startedAt = Date.now();
-  const [dailyOutcome, oneHourOutcome, scheduledTeamOutcome] = await Promise.allSettled([
-    processReminderCycle(),
-    processOneHourDeadlineEmails(),
-    processScheduledTeamEmails(),
-  ]);
-
-  const dailyResult = dailyOutcome.status === "fulfilled"
-    ? dailyOutcome.value
-    : { dailyReminderError: dailyOutcome.reason instanceof Error ? dailyOutcome.reason.message : "Unknown daily reminder error" };
-
-  const oneHourResult = oneHourOutcome.status === "fulfilled"
-    ? oneHourOutcome.value
-    : { oneHourReminderError: oneHourOutcome.reason instanceof Error ? oneHourOutcome.reason.message : "Unknown one-hour reminder error" };
-
-  const scheduledTeamResult = scheduledTeamOutcome.status === "fulfilled"
-    ? scheduledTeamOutcome.value
-    : { scheduledTeamEmailError: scheduledTeamOutcome.reason instanceof Error ? scheduledTeamOutcome.reason.message : "Unknown scheduled team email error" };
-
-  const success = dailyOutcome.status === "fulfilled" || oneHourOutcome.status === "fulfilled" || scheduledTeamOutcome.status === "fulfilled";
-
-  console.info("[cron:reminders]", {
-    success,
-    ...dailyResult,
-    ...oneHourResult,
-    ...scheduledTeamResult,
-    durationMs: Date.now() - startedAt,
-  });
-
-  if (!success) {
-    console.error("[cron:reminders:error]", { ...dailyResult, ...oneHourResult, ...scheduledTeamResult });
+  try {
+    const startedAt = Date.now();
+    const result = await processReminderCycle();
+    console.info("[cron:reminders]", {
+      ...result,
+      durationMs: Date.now() - startedAt,
+    });
+    return Response.json({ success: true, ...result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown reminder error";
+    console.error("[cron:reminders:error]", message);
+    return Response.json({ success: false, error: message }, { status: 500 });
   }
-
-  return Response.json(
-    { success, ...dailyResult, ...oneHourResult, ...scheduledTeamResult },
-    { status: success ? 200 : 500 },
-  );
 }
