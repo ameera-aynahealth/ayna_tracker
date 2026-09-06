@@ -56,3 +56,31 @@ export async function updateProjectStatus(projectId: string, status: string) {
   revalidatePath("/projects");
   revalidatePath(`/projects/${projectId}`);
 }
+
+// "Delete" is intentionally recoverable. It removes the project from daily
+// views but keeps its tasks/history safe in Archive in case it was accidental.
+export async function archiveProject(projectId: string) {
+  const user = await requireEditPermission();
+  const existing = await db.query.projects.findFirst({ where: eq(projects.id, projectId) });
+  if (!existing) throw new Error("Project not found");
+
+  await db.update(projects).set({ archivedAt: new Date(), updatedAt: new Date() }).where(eq(projects.id, projectId));
+  await logActivity({ projectId, userId: user.id, action: "archived", newValue: existing.name });
+  revalidatePath("/");
+  revalidatePath("/projects");
+  revalidatePath("/archive");
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function restoreProject(projectId: string) {
+  const user = await requireEditPermission();
+  const existing = await db.query.projects.findFirst({ where: eq(projects.id, projectId) });
+  if (!existing) throw new Error("Project not found");
+
+  await db.update(projects).set({ archivedAt: null, updatedAt: new Date() }).where(eq(projects.id, projectId));
+  await logActivity({ projectId, userId: user.id, action: "restored", newValue: existing.name });
+  revalidatePath("/");
+  revalidatePath("/projects");
+  revalidatePath("/archive");
+  revalidatePath(`/projects/${projectId}`);
+}

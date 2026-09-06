@@ -2,17 +2,47 @@ import "server-only";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
+import * as extraRelations from "./relations";
+import * as trackerSchema from "./tracker-schema";
 
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL is not set. Copy .env.example to .env.local and fill it in.");
+// Drizzle needs all tables and relation definitions in the schema object used
+// by the relational query builder.
+const relationalSchema = { ...schema, ...extraRelations, ...trackerSchema };
+
+type Database = ReturnType<typeof drizzle<typeof relationalSchema>>;
+
+type DbGlobals = {
+  queryClient?: postgres.Sql;
+  database?: Database;
+};
+
+const globalForDb = globalThis as unknown as DbGlobals;
+
+function getDatabase(): Database {
+  if (globalForDb.database) return globalForDb.database;
+
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error(
+      "DATABASE_URL is not set. Add it to the Vercel environment or your local .env.local before accessing tracker data."
+    );
+  }
+
+  const queryClient = globalForDb.queryClient ?? postgres(databaseUrl, { max: 5 });
+  const database = drizzle(queryClient, { schema: relationalSchema });
+
+  if (process.env.NODE_ENV !== "production") {
+    globalForDb.queryClient = queryClient;
+    globalForDb.database = database;
+  }
+
+  return database;
 }
 
-// A single connection is reused across hot reloads in dev; Vercel's
-// serverless functions get a fresh connection per cold start, which is fine
-// for Neon (it pools on its end via the pooled connection string).
-const globalForDb = globalThis as unknown as { queryClient?: postgres.Sql };
-
-const queryClient = globalForDb.queryClient ?? postgres(process.env.DATABASE_URL, { max: 5 });
-if (process.env.NODE_ENV !== "production") globalForDb.queryClient = queryClient;
-
-export const db = drizzle(queryClient, { schema });
+export const db = new Proxy({} as Database, {
+  get(_target, property) {
+    const database = getDatabase();
+    const value = Reflect.get(database as object, property);
+    return typeof value === "function" ? value.bind(database) : value;
+  },
+});

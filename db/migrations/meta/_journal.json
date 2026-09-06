@@ -8,6 +8,20 @@
       "when": 1787714682989,
       "tag": "0000_hard_jack_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788395400000,
+      "tag": "0001_best_version_master_list",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788396200000,
+      "tag": "0002_beta_phase_labels",
+      "breakpoints": true
     }
   ]
 }
