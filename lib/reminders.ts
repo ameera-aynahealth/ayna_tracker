@@ -112,6 +112,7 @@ async function deliver(input: {
   subject: string;
   html: string;
   createInApp?: boolean;
+  sendEmail?: boolean;
 }, summary: ReminderSummary) {
   const deliveryId = await claimDelivery({
     dedupeKey: input.dedupeKey,
@@ -133,6 +134,11 @@ async function deliver(input: {
       body: input.body,
     });
     summary.notificationsCreated += 1;
+  }
+
+  if (input.sendEmail === false) {
+    await finishDelivery(deliveryId, { success: true });
+    return;
   }
 
   try {
@@ -174,59 +180,44 @@ export async function processReminderCycle(now = new Date()): Promise<ReminderSu
     const timezone = user.timezone || "America/New_York";
     const localHour = Number(formatInTimeZone(now, timezone, "H"));
     const localDay = formatInTimeZone(now, timezone, "yyyy-MM-dd");
-    const localWeekday = Number(formatInTimeZone(now, timezone, "i"));
-
-    // Existing task reminders keep a two-hour safety window. Dedupe keys make
-    // sure an 8:00 and 9:00 cron run can never send the same reminder twice.
-    const isMorningWindow = localHour >= 8 && localHour < 10;
-    if (!isMorningWindow) continue;
-
     const owned = openTasks.filter((task) => task.ownerId === user.id);
 
-    for (const task of owned) {
-      const reminderAt = task.status === "waiting" && task.followupAt ? task.followupAt : task.dueAt;
-      if (!reminderAt) continue;
+    // Keep task-level reminders inside the tracker, but never email them.
+    // This prevents the inbox flood while preserving useful in-app alerts.
+    if (localHour === 9) {
+      for (const task of owned) {
+        const reminderAt = task.status === "waiting" && task.followupAt ? task.followupAt : task.dueAt;
+        if (!reminderAt) continue;
 
-      const dueDay = formatInTimeZone(reminderAt, timezone, "yyyy-MM-dd");
-      const daysUntil = dayNumber(dueDay) - dayNumber(localDay);
-      const descriptor = reminderDescriptor(daysUntil);
-      if (!descriptor) continue;
+        const dueDay = formatInTimeZone(reminderAt, timezone, "yyyy-MM-dd");
+        const daysUntil = dayNumber(dueDay) - dayNumber(localDay);
+        const descriptor = reminderDescriptor(daysUntil);
+        if (!descriptor) continue;
 
-      if (descriptor.type === "due_soon" && !user.notifyOnDueSoon) continue;
-      if (descriptor.type === "overdue" && !user.notifyOnOverdue) continue;
+        if (descriptor.type === "due_soon" && !user.notifyOnDueSoon) continue;
+        if (descriptor.type === "overdue" && !user.notifyOnOverdue) continue;
 
-      const isFollowUp = task.status === "waiting" && Boolean(task.followupAt);
-      const label = isFollowUp ? "Follow-up" : "Task";
-      const projectLabel = task.project?.name ? `Project: ${task.project.name}` : "No project";
-      const dueLabel = formatInTimeZone(reminderAt, timezone, "EEE, MMM d 'at' h:mm a zzz");
-      const targetVersion = reminderAt.toISOString();
+        const isFollowUp = task.status === "waiting" && Boolean(task.followupAt);
+        const label = isFollowUp ? "Follow-up" : "Task";
+        const projectLabel = task.project?.name ? `Project: ${task.project.name}` : "No project";
+        const dueLabel = formatInTimeZone(reminderAt, timezone, "EEE, MMM d 'at' h:mm a zzz");
+        const targetVersion = reminderAt.toISOString();
 
-      await deliver({
-        dedupeKey: `task:${task.id}:${user.id}:${descriptor.key}:${targetVersion}`,
-        user,
-        taskId: task.id,
-        type: descriptor.type,
-        title: `${label} ${descriptor.phrase}: ${task.title}`,
-        body: `${projectLabel}. ${dueLabel}.`,
-        subject: descriptor.type === "overdue"
-          ? `Overdue: ${task.title}`
-          : `${isFollowUp ? "Follow up" : "Due soon"}: ${task.title}`,
-        html: emailLayout({
-          eyebrow: descriptor.type === "overdue" ? "Needs attention" : isFollowUp ? "Follow-up reminder" : "Upcoming deadline",
-          title: task.title,
-          intro: `This ${label.toLowerCase()} is ${descriptor.phrase}.`,
-          sections: [
-            { title: "Details", items: [projectLabel, `Deadline: ${dueLabel}`, `Priority: ${task.priority.replaceAll("_", " ")}`] },
-          ],
-          ctaLabel: "Open task",
-          ctaUrl: appUrl(`/tasks/${task.id}`),
-        }),
-      }, summary);
+        await deliver({
+          dedupeKey: `task:${task.id}:${user.id}:${descriptor.key}:${targetVersion}`,
+          user,
+          taskId: task.id,
+          type: descriptor.type,
+          title: `${label} ${descriptor.phrase}: ${task.title}`,
+          body: `${projectLabel}. ${dueLabel}.`,
+          subject: "",
+          html: "",
+          sendEmail: false,
+        }, summary);
+      }
     }
 
-    // Every active teammate gets one individualized wake-up brief at 9 AM in
-    // their tracker timezone. getMyWorkBuckets includes primary assignees,
-    // additional assignees, and review responsibility.
+    // 9 AM: one consolidated morning briefing per teammate.
     if (localHour === 9) {
       const buckets = await getMyWorkBuckets(user.id);
       const firstName = (user.name.trim().split(/\s+/)[0] || "BADDIE").toUpperCase();
@@ -238,7 +229,7 @@ export async function processReminderCycle(now = new Date()): Promise<ReminderSu
         : ["Nothing due today. Use the opening to knock out something overdue or get ahead."];
 
       await deliver({
-        dedupeKey: `daily:${user.id}:${localDay}`,
+        dedupeKey: `daily-am:${user.id}:${localDay}`,
         user,
         type: "daily_digest",
         title: wakeTitle,
@@ -276,36 +267,51 @@ export async function processReminderCycle(now = new Date()): Promise<ReminderSu
       }, summary);
     }
 
-    if (user.weeklyDigest && localWeekday === 1) {
+    // 5 PM: one consolidated wrap-up. No other tracker emails are sent.
+    if (localHour === 17) {
       const buckets = await getMyWorkBuckets(user.id);
-      const weekItems = [
-        ...buckets.overdue.map((t) => `Overdue: ${t.title}`),
-        ...buckets.dueToday.map((t) => `Today: ${t.title}`),
-        ...buckets.dueTomorrow.map((t) => `Tomorrow: ${t.title}`),
-        ...buckets.thisWeek.map((t) => t.title),
-      ].slice(0, 18);
+      const firstName = (user.name.trim().split(/\s+/)[0] || "BADDIE").toUpperCase();
+      const remainingCount = buckets.all.length;
+      const stillDueToday = buckets.dueToday.length;
+      const wrapTitle = `5 PM CHECK-IN ${firstName} HERE'S WHAT'S STILL ON YOUR PLATE BADDIE`;
+      const todayItems = buckets.dueToday.length
+        ? buckets.dueToday.slice(0, 12).map(taskLabel)
+        : ["Nothing else due today."];
 
-      if (weekItems.length > 0) {
-        await deliver({
-          dedupeKey: `weekly:${user.id}:${localDay}`,
-          user,
-          type: "weekly_digest",
-          title: "Your Ayna week ahead",
-          subject: "Your Ayna week ahead",
-          createInApp: false,
-          html: emailLayout({
-            eyebrow: "Monday brief",
-            title: "Your Ayna week ahead",
-            intro: "A quick view of the deadlines and priorities coming up this week.",
-            sections: [
-              { title: "This week", items: weekItems },
-              { title: "Waiting and blocked", items: [...buckets.waiting, ...buckets.blocked].slice(0, 8).map((t) => t.title) },
-            ],
-            ctaLabel: "Plan my week",
-            ctaUrl: appUrl("/my-work"),
-          }),
-        }, summary);
-      }
+      await deliver({
+        dedupeKey: `daily-pm:${user.id}:${localDay}`,
+        user,
+        type: "daily_digest",
+        title: wrapTitle,
+        body: `${stillDueToday} still due today. ${remainingCount} total tasks remaining.`,
+        subject: "5 PM ayna wrap-up",
+        createInApp: false,
+        html: emailLayout({
+          eyebrow: "5 PM ayna wrap-up",
+          title: wrapTitle,
+          intro: `${remainingCount} total ${remainingCount === 1 ? "task" : "tasks"} still open. Here is what to close out or carry into tomorrow.`,
+          topSection: {
+            title: `Still due today · ${stillDueToday}`,
+            items: todayItems,
+          },
+          visualStats: [
+            { label: "Still due today", value: stillDueToday },
+            { label: "Overdue", value: buckets.overdue.length },
+            { label: "Due tomorrow", value: buckets.dueTomorrow.length },
+            { label: "Blocked / waiting", value: buckets.blocked.length + buckets.waiting.length },
+          ],
+          sections: [
+            { title: "Overdue", items: buckets.overdue.slice(0, 10).map(taskLabel) },
+            { title: "Due tomorrow", items: buckets.dueTomorrow.slice(0, 10).map(taskLabel) },
+            { title: "Coming up this week", items: buckets.thisWeek.slice(0, 10).map(taskLabel) },
+            { title: "Blocked", items: buckets.blocked.slice(0, 8).map(taskLabel) },
+            { title: "Waiting", items: buckets.waiting.slice(0, 8).map(taskLabel) },
+            { title: "Needs review", items: buckets.needsReview.slice(0, 8).map(taskLabel) },
+          ],
+          ctaLabel: "Open my tasks",
+          ctaUrl: appUrl("/my-work"),
+        }),
+      }, summary);
     }
   }
 
