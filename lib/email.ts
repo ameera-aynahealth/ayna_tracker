@@ -1,6 +1,10 @@
 import "server-only";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
+const ALLOWED_TRACKER_EMAIL_SUBJECTS = new Set([
+  "Daily ayna briefing",
+  "5 PM ayna wrap-up",
+]);
 
 export type EmailResult = {
   id: string | null;
@@ -120,6 +124,12 @@ export async function sendTrackerEmail(input: {
   // Never send real team emails from local or preview deployments.
   if (!isProduction) {
     console.info("[email:suppressed]", input.subject, input.to);
+    return { id: "suppressed", suppressed: true };
+  }
+
+  // Hard safety guard: the tracker may only email the two consolidated digests.
+  if (!ALLOWED_TRACKER_EMAIL_SUBJECTS.has(input.subject)) {
+    console.info("[email:suppressed:not-allowed]", input.subject, input.to);
     return { id: "suppressed", suppressed: true };
   }
 
