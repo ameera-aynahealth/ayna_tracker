@@ -4,7 +4,6 @@ import { db } from "@/db";
 import { projects } from "@/db/schema";
 import { requireEditPermission } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
-import { sendProjectEmail } from "@/lib/project-emails";
 import { nanoid } from "nanoid";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -55,15 +54,6 @@ export async function updateProjectStatus(projectId: string, status: string) {
     newValue: status,
   });
 
-  if (status === "completed" && existing.status !== "completed") {
-    await sendProjectEmail({
-      kind: "completed",
-      workspaceId: existing.workspaceId,
-      actorName: user.name,
-      project: { id: existing.id, name: existing.name, dueDate: existing.dueDate },
-    });
-  }
-
   revalidatePath("/projects");
   revalidatePath(`/projects/${projectId}`);
 }
@@ -84,14 +74,6 @@ export async function updateProjectDueDate(projectId: string, dueDate: string | 
     field: "dueDate",
     oldValue: existing.dueDate?.toISOString() ?? null,
     newValue: nextDueDate?.toISOString() ?? null,
-  });
-
-  await sendProjectEmail({
-    kind: "deadline_changed",
-    workspaceId: existing.workspaceId,
-    actorName: user.name,
-    project: { id: existing.id, name: existing.name, dueDate: nextDueDate },
-    previousDueDate: existing.dueDate,
   });
 
   revalidatePath("/projects");
