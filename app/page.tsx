@@ -2,7 +2,6 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { getOrCreateCurrentUser } from "@/lib/auth";
 import { ensureSep3MeetingTasks } from "@/lib/sep3-meeting-task-bootstrap";
-import { repairSep3TasksIntoAppUpdates } from "@/lib/repair-app-updates-tasks";
 import { ensureGrantApplicationTasks } from "@/lib/grant-applications-bootstrap";
 import { getHomeSummary, getProjectsWithProgress, getTopPriorities } from "@/lib/queries";
 import { AppShell } from "@/components/app-shell";
@@ -13,7 +12,6 @@ export default async function HomePage() {
   if (!user) return null;
 
   await ensureSep3MeetingTasks();
-  await repairSep3TasksIntoAppUpdates();
   await ensureGrantApplicationTasks();
 
   const [summary, priorities, projects] = await Promise.all([
